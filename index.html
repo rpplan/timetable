@@ -4,52 +4,36 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Works timetable</title>
-  <meta name="description" content="Office timetable for site measurement, billing, advances and meetings: who does what, on which day.">
-  <meta name="theme-color" content="#1f5c55">
+  <meta name="description" content="Office timetable: who measures which site, billing and advance days, and meetings.">
+  <meta name="theme-color" content="#ffffff">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
-  <a class="skip" href="#view">Skip to the timetable</a>
-  <div class="shell">
-    <aside class="rail">
-      <div class="brand">
-        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="5" width="26" height="23" rx="2"/><path d="M3 11h26M10 3v5M22 3v5M8 16h5v4H8zM15 16h4M15 20h9M8 24h16"/></svg>
-        <div><strong id="brand-title">Works timetable</strong><span id="brand-range"></span></div>
+  <header class="top">
+    <div class="top-in">
+      <a href="#/today" class="brand"><img src="assets/icon.svg" alt="" width="30" height="30"><span><b id="title">Works timetable</b><small id="range"></small></span></a>
+      <div class="top-acts">
+        <button type="button" id="clash-badge" class="badge" hidden></button>
+        <button type="button" id="undo" class="btn ghost" disabled>Undo</button>
+        <button type="button" id="add" class="btn primary">Add work</button>
       </div>
-      <nav id="nav" class="nav" aria-label="Pages"></nav>
-      <button type="button" class="help-link" id="help">How to use</button>
-    </aside>
-    <div class="main">
-      <header class="topbar">
-        <button type="button" class="icon-btn menu-btn" id="menu" aria-label="Open menu"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-        <button type="button" class="searchbox" id="search"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg><span>Find a person, company, task or day</span><kbd>Ctrl K</kbd></button>
-        <a href="#/settings" class="local-flag" id="local-flag" hidden title="Your changes are saved in this browser. Share them from Settings.">Changed in this browser</a>
-        <div class="top-acts">
-          <button type="button" class="icon-btn" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7L4 12l5 5"/><path d="M4 12h10a5 5 0 010 10h-2"/></svg></button>
-          <button type="button" class="icon-btn" id="redo" aria-label="Redo" title="Redo (Ctrl+Y)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 7l5 5-5 5"/><path d="M20 12H10a5 5 0 000 10h2"/></svg></button>
-          <button type="button" class="icon-btn" id="theme" aria-label="Switch colours"></button>
-          <button type="button" class="btn btn-primary" id="add"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add work</span></button>
-        </div>
-      </header>
-      <main id="view" tabindex="-1"><p class="loading">Loading the timetable…</p></main>
     </div>
-  </div>
+    <nav id="nav" class="mainnav" aria-label="Pages"></nav>
+  </header>
+  <main id="view" class="wrap" tabindex="-1"></main>
   <div id="modal" class="modal" hidden></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <noscript><p class="loading">This timetable needs JavaScript switched on.</p></noscript>
   <script src="assets/js/defaults.js"></script>
   <script src="assets/js/engine.js"></script>
   <script src="assets/js/store.js"></script>
   <script src="assets/js/io.js"></script>
   <script src="assets/js/ui.js"></script>
   <script src="assets/js/app.js"></script>
-  <script src="assets/js/views-core.js"></script>
-  <script src="assets/js/views-people.js"></script>
-  <script src="assets/js/views-admin.js"></script>
+  <script src="assets/js/views.js"></script>
   <script src="assets/js/main.js"></script>
 </body>
 </html>

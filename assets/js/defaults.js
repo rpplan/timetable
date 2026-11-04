@@ -1,163 +1,116 @@
-/* Default plan, transcribed from "B PLANNING CHART" (B_planning_of_works.xlsx).
-   Everything here can be edited in the website; this is only the starting point. */
+/* Starting plan, taken from "B PLANNING CHART" (B_planning_of_works.xlsx, updated version).
+   Company names are spelt exactly as in the sheet. Everything can be changed on the website. */
 (function (g) {
   'use strict';
 
+  // group: main = main contractors (in town), outstation = outstation sites, other = other contractors (in town)
   const companies = [
-    // Main contractors
     { id: 'sunniva-sdl', name: 'Sunniva SDL', group: 'main' },
-    { id: 'kipl-sdl', name: 'KIPL SDL', group: 'main' },
+    { id: 'kipl-sdl', name: 'KIPL SDL', group: 'main' },            // shared by N and R, on separate days
     { id: 'kipl-sol', name: 'KIPL SOL', group: 'main' },
-    { id: 'kipl-sdal', name: 'KIPL SDAL', group: 'main' },
     { id: 'mahto-sol', name: 'Mahto SOL', group: 'main' },
     { id: 'kipl-misc', name: 'KIPL Misc', group: 'main' },
-    { id: 'precon', name: 'Precon', group: 'main' },
-    // Outstation
-    { id: 'mahto-dhanbad-lr', name: 'Mahto Dhanbad (Land & Roads)', group: 'outstation' },
+    { id: 'precon', name: 'PRECON', group: 'main' },
+    { id: 'mahto-othersites', name: 'Mahto Othersites', group: 'main' }, // in town, measured by P
+    { id: 'mahto-dhanbad', name: 'Mahto Dhanbad', group: 'outstation', together: true }, // N and R go together, same day
     { id: 'kipl-dhule', name: 'KIPL Dhule', group: 'outstation' },
-    { id: 'mahto-dhanbad-bldg', name: 'Mahto Dhanbad Bldg', group: 'outstation' },
     { id: 'sunniva-dhule', name: 'Sunniva Dhule', group: 'outstation' },
-    { id: 'mahto-other', name: 'Mahto other sites', group: 'outstation' },
     { id: 'etpl-dholpur', name: 'ETPL Dholpur', group: 'outstation' },
-    // Other contractors
-    { id: 'classic-1', name: 'Classic 1', group: 'other' },
+    { id: 'classic-1', name: 'Classic-1', group: 'other' },
     { id: 'tekade', name: 'Tekade', group: 'other' },
     { id: 'aashish', name: 'Aashish', group: 'other' },
     { id: 'borkar', name: 'Borkar', group: 'other' },
     { id: 'unity', name: 'Unity', group: 'other' },
+    { id: 'classic-2', name: 'Classic-2', group: 'other' },
     { id: 'aks', name: 'AKS', group: 'other' },
     { id: 'rana', name: 'Rana', group: 'other' },
-    { id: 'aashish-stone', name: 'Aashish Stonework', group: 'other' },
-    { id: 'vijay-chaudhari', name: 'Vijay Chaudhari', group: 'other' },
-    { id: 'classic-2', name: 'Classic 2', group: 'other' },
-    { id: 'csr', name: 'CSR', group: 'other' },
-    { id: 'etpl-dholpur-oc', name: 'ETPL Dholpur (other works)', group: 'other' },
+    { id: 'aashish-stone', name: 'Aashish Stone', group: 'other' },
+    { id: 'vee-l-c', name: 'Vee L C', group: 'other' },
+    { id: 'pethe', name: 'Pethe', group: 'other' },
     { id: 'jaiswal', name: 'Jaiswal', group: 'other' },
-    { id: 'nagpur-projects', name: 'Nagpur Projects', group: 'other' },
-    { id: 'ppv', name: 'PPV works', group: 'other' }
+    { id: 'ppv-works', name: 'PPV Works', group: 'other' }
   ];
 
   const people = [
-    { id: 'N', name: 'N', fullName: '', role: 'Site measurement', color: '#2563a8', aliases: [] },
-    { id: 'R', name: 'R', fullName: '', role: 'Site measurement', color: '#b5432f', aliases: [] },
-    { id: 'S', name: 'S', fullName: '', role: 'Site measurement, PPV works', color: '#2f7d4f', aliases: [] },
-    { id: 'P', name: 'P / P1', fullName: '', role: 'Site measurement, bill checking, estimation (P and P1 are the same person)', color: '#7a4bb0', aliases: ['P1'] },
-    { id: 'B', name: 'B', fullName: '', role: 'Records, billing checks, payment recommendation, timetable', color: '#c27c0e', aliases: [] }
+    { id: 'N', name: 'N', fullName: '', role: 'Site measurement', color: '#3b6fd4', aliases: [] },
+    { id: 'R', name: 'R', fullName: '', role: 'Site measurement', color: '#d4573b', aliases: [] },
+    { id: 'S', name: 'S', fullName: '', role: 'Site measurement, PPV works 2 days a week', color: '#2e9466', aliases: [] },
+    { id: 'P', name: 'P / P1', fullName: '', role: 'Site measurement. As P1: bill checking, estimation, PPV billing, GST filing', color: '#8a55c9', aliases: ['P1'] },
+    { id: 'B', name: 'B', fullName: '', role: 'Records, billing checks, payment recommendation, timetable', color: '#d29215', aliases: [] }
   ];
 
   const responsibilities = {
-    N: { main: ['sunniva-sdl', 'kipl-sdl'], outstation: ['mahto-dhanbad-lr', 'kipl-dhule'], other: ['classic-1', 'tekade'], duties: '' },
-    R: { main: ['kipl-sol', 'kipl-sdal', 'mahto-sol'], outstation: ['mahto-dhanbad-bldg', 'sunniva-dhule'], other: ['aashish', 'borkar', 'unity'], duties: '' },
-    S: { main: ['kipl-misc'], outstation: [], other: ['aks', 'rana', 'aashish-stone', 'vijay-chaudhari', 'classic-2'], duties: 'PPV works of 2 days a week' },
-    P: { main: ['precon'], outstation: ['mahto-other', 'etpl-dholpur'], other: ['csr', 'etpl-dholpur-oc', 'jaiswal', 'nagpur-projects', 'ppv'],
-         duties: 'As P1: bill checking, rate check, formatting, advances, asset codes, Tally billing, project estimation, PPV billing, GST filing' },
+    N: { main: ['sunniva-sdl', 'kipl-sdl'], outstation: ['mahto-dhanbad', 'kipl-dhule'], other: ['classic-1', 'tekade'], duties: '' },
+    R: { main: ['kipl-sol', 'kipl-sdl', 'mahto-sol'], outstation: ['mahto-dhanbad', 'sunniva-dhule'], other: ['aashish', 'borkar', 'unity', 'classic-2'], duties: '' },
+    S: { main: ['kipl-misc'], outstation: [], other: ['aks', 'rana', 'aashish-stone', 'vee-l-c', 'pethe'], duties: 'PPV works of 2 days a week.' },
+    P: { main: ['precon', 'mahto-othersites'], outstation: ['etpl-dholpur'], other: ['jaiswal', 'ppv-works'],
+         duties: 'As P1: bill checking, rate list, formatting, advances, asset codes, Tally billing. Project estimation. PPV billing, GST filing.' },
     B: { main: [], outstation: [], other: [],
-         duties: 'Recording all asset names, status of estimation, advances, billing, cement calculation, credit balance sheet preparation, payment recommendation, checking billing sheets after checking and preparation by P1. Maintain timetable and works (daily).' }
+         duties: 'Recording all asset names, status of estimation, advances, billing, cement calculation, credit balance sheet preparation, payment recommendation, checking of billing sheets after checking and preparation by P1. Maintain timetable and works. To be checked daily by B.' }
   };
 
-  const MAIN6 = ['sunniva-sdl', 'kipl-sdl', 'kipl-sol', 'kipl-sdal', 'mahto-sol', 'precon'];
-  const OTHER_ALL = companies.filter(c => c.group === 'other').map(c => c.id);
+  const MAIN5 = ['sunniva-sdl', 'kipl-sdl', 'kipl-sol', 'mahto-sol', 'precon'];
+  const OTHER = companies.filter(c => c.group === 'other').map(c => c.id);
+  const ALLP = ['N', 'R', 'S', 'P', 'B'];
 
-  const advSteps = 'Measurement checking, rate check, linking to PO file, advances filling, asset codes checking, emailing. Additionally discuss Precon bills & works of D.';
-  const billSteps = 'Bill checking, rate check, formatting, advances, asset codes, Tally billing by P1. B checks billing sheets after P1.';
+  const advSteps = 'Measurement checking, rate check, linking to PO file, advances filling, asset codes checking, emailing. Additionally discuss PRECON bills & works of D.';
+  const billSteps = 'Bill checking, rate check, formatting, advances, asset codes, Tally billing by P1. B checks the billing sheets after P1.';
   const meetDetail = 'Work list for part bills, final bill lists, shortlisting of works for billing and advances, with ready meeting agenda and time for discussions.';
 
-  const agenda75 = (who) => [
-    { item: `${who}: part bill work list`, minutes: 15, owner: 'N' },
-    { item: `${who}: final bill list`, minutes: 15, owner: 'R' },
-    { item: 'Shortlist works for billing', minutes: 15, owner: 'P' },
-    { item: 'Shortlist works for advances', minutes: 15, owner: 'B' },
-    { item: 'Decisions and action points', minutes: 15, owner: 'B' }
+  const ag = (who, m) => [
+    { item: `${who}: work list for part bills`, minutes: m[0], owners: ['N', 'R'] },
+    { item: `${who}: final bill lists`, minutes: m[1], owners: ['P', 'B'] },
+    { item: 'Shortlisting of works for billing', minutes: m[2], owners: ['P', 'B'] },
+    { item: 'Shortlisting of works for advances', minutes: m[3], owners: ['B'] },
+    { item: 'Discussion and action points', minutes: m[4], owners: ALLP.slice() }
   ];
-  const agenda45 = (who) => [
-    { item: `${who}: part bill work list`, minutes: 10, owner: 'N' },
-    { item: `${who}: final bill list`, minutes: 10, owner: 'R' },
-    { item: 'Shortlist works for billing', minutes: 10, owner: 'P' },
-    { item: 'Shortlist works for advances', minutes: 10, owner: 'B' },
-    { item: 'Decisions and action points', minutes: 5, owner: 'B' }
-  ];
+  const A75 = [15, 15, 15, 15, 15], A45 = [10, 10, 10, 10, 5];
 
   const tasks = [
-    { id: 'adv1', title: 'ADV-1 advances', type: 'advance', mode: 'monthly', days: [1], people: ['P', 'B'],
-      start: '10:00', end: '13:30', companies: MAIN6, details: advSteps, holiday: 'shift' },
-    { id: 'ppvgst', title: 'PPV works, GST works', type: 'office', mode: 'monthly', days: [1, 2], people: ['P', 'B'],
-      start: '14:30', end: '18:30', companies: ['ppv'], details: 'PPV billing, GST filing. Compulsory time allotment.', holiday: 'shift' },
-    { id: 'out1', title: 'Outstation site measurement', type: 'outstation', mode: 'monthly', days: [2, 3, 4, 5], people: ['N', 'R', 'P'],
-      start: '10:30', end: '18:30', siteGroup: 'outstation', maxDays: 4,
+    { id: 'adv1', title: 'ADV-1 advances', type: 'advance', mode: 'monthly', days: [1], people: ['P', 'B'], start: '10:00', end: '13:30', companies: MAIN5, details: advSteps, holiday: 'shift' },
+    { id: 'ppvgst', title: 'PPV works, GST works', type: 'office', mode: 'monthly', days: [1, 2], people: ['P', 'B'], start: '14:30', end: '18:30', companies: ['ppv-works'], details: 'Compulsory time allotment.', holiday: 'shift' },
+    { id: 'out1', title: 'Outstation site measurement', type: 'outstation', mode: 'monthly', days: [2, 3, 4, 5], people: ['N', 'R', 'P'], start: '10:00', end: '18:30', siteGroup: 'outstation', maxDays: 4,
       details: 'Max 4 days including sheet preparation and cement calculations.', holiday: 'skip' },
-    { id: 'sb', title: 'PPV, billing, estimation, bank visits, valuation checking', type: 'office', mode: 'monthly', days: [2, 3, 4, 5], people: ['S', 'B'],
-      start: '10:30', end: '13:30', companies: ['ppv'],
+    { id: 'sb', title: 'PPV, billing, estimation, bank visits, valuation checking', type: 'office', mode: 'monthly', days: [2, 3, 4, 5], people: ['S', 'B'], start: '10:30', end: '13:30', companies: ['ppv-works'],
       details: 'PPV works, billing, estimation works, bank visits in the first half, valuation checking. Compulsory time allotment.', holiday: 'skip' },
-    { id: 'meet-sunniva-1', title: 'Joint meet: Sunniva', type: 'meeting', mode: 'monthly', days: [5], people: ['N', 'R', 'S', 'P', 'B'],
-      start: '09:15', end: '10:30', companies: ['sunniva-sdl', 'sunniva-dhule'], details: meetDetail, holiday: 'shift', agenda: agenda75('Sunniva') },
-    { id: 'meet-kipl-1', title: 'Joint meet: KIPL', type: 'meeting', mode: 'monthly', days: [6], people: ['N', 'R', 'S', 'P', 'B'],
-      start: '09:15', end: '10:30', companies: ['kipl-sdl', 'kipl-sol', 'kipl-sdal', 'kipl-misc', 'kipl-dhule'], details: meetDetail, holiday: 'shift', agenda: agenda75('KIPL') },
-    { id: 'meet-mahto-1', title: 'Joint meet: Mahto and other contractors', type: 'meeting', mode: 'monthly', days: [7], people: ['N', 'R', 'S', 'P', 'B'],
-      start: '09:15', end: '10:30', companies: ['mahto-sol', 'mahto-dhanbad-lr', 'mahto-dhanbad-bldg', 'mahto-other'], details: meetDetail, holiday: 'shift', agenda: agenda75('Mahto & others') },
-    { id: 'site-c1', title: 'Site measurements C-1 (main contractors)', type: 'site', mode: 'monthly', days: [5, 6, 7, 8, 9, 10, 11], people: ['N', 'R', 'S', 'P'],
-      start: '10:30', end: '18:30', siteGroup: 'main', cycle: 'C-1',
-      details: 'Main contractors, with sheet preparation and cement calculation.', holiday: 'skip' },
-    { id: 'bill1', title: 'BILLING-1', type: 'billing', mode: 'monthly', days: [8, 9], people: ['P', 'B'],
-      start: '10:00', end: '18:30', companies: MAIN6, details: billSteps, holiday: 'shift' },
-    { id: 'site-c2', title: 'Site measurements C-2 (other contractors)', type: 'site', mode: 'monthly', days: [12, 13, 14, 15, 16, 17, 18], people: ['N', 'R', 'S', 'P'],
-      start: '10:00', end: '18:30', siteGroup: 'other', cycle: 'C-2',
+    { id: 'meet-sunniva-1', title: 'Joint meet: Sunniva SDL', type: 'meeting', mode: 'monthly', days: [5], people: ALLP, start: '09:15', end: '10:30', companies: ['sunniva-sdl'], details: meetDetail, holiday: 'shift', agenda: ag('Sunniva SDL', A75) },
+    { id: 'meet-kipl-1', title: 'Joint meet: KIPL', type: 'meeting', mode: 'monthly', days: [6], people: ALLP, start: '09:15', end: '10:30', companies: ['kipl-sdl', 'kipl-sol', 'kipl-misc'], details: meetDetail, holiday: 'shift', agenda: ag('KIPL', A75) },
+    { id: 'meet-mahto-1', title: 'Joint meet: Mahto, other contractor bills', type: 'meeting', mode: 'monthly', days: [7], people: ALLP, start: '09:15', end: '10:30', companies: ['mahto-sol'].concat(OTHER), details: meetDetail, holiday: 'shift', agenda: ag('Mahto & other contractors', A75) },
+    { id: 'site-c1', title: 'Site measurements C-1', type: 'site', mode: 'monthly', days: [5, 6, 7, 8, 9, 10, 11], people: ['N', 'R', 'S', 'P'], start: '10:30', end: '18:30', siteGroup: 'main', cycle: 'C-1',
+      details: 'Main contractors, with sheet preparation, cement calculation.', holiday: 'skip' },
+    { id: 'bill1', title: 'BILLING-1', type: 'billing', mode: 'monthly', days: [8, 9], people: ['P', 'B'], start: '10:00', end: '18:30', companies: MAIN5, details: billSteps, holiday: 'shift' },
+    { id: 'site-c2', title: 'Site measurements C-2', type: 'site', mode: 'monthly', days: [12, 13, 14, 15, 16, 17, 18], people: ['N', 'R', 'S', 'P'], start: '10:00', end: '18:30', siteGroup: 'other', cycle: 'C-2',
       details: 'For other contractors or main contractors.', holiday: 'skip' },
-    { id: 'adv2', title: 'ADV-2 advances', type: 'advance', mode: 'monthly', days: [18], people: ['P', 'B'],
-      start: '10:00', end: '18:30', companies: MAIN6, details: advSteps, holiday: 'shift' },
-    { id: 'bill2', title: 'BILLING-2', type: 'billing', mode: 'monthly', days: [19], people: ['P', 'B'],
-      start: '10:00', end: '18:30', companies: MAIN6.concat(OTHER_ALL), details: billSteps + ' Includes other contractors.', holiday: 'shift' },
-    { id: 'out2', title: 'Outstation site measurement', type: 'outstation', mode: 'monthly', days: [20, 21, 22, 23], people: ['N', 'R'],
-      start: '10:00', end: '18:30', siteGroup: 'outstation', maxDays: 4,
+    { id: 'adv2', title: 'ADV-2 advances', type: 'advance', mode: 'monthly', days: [18], people: ['P', 'B'], start: '10:00', end: '18:30', companies: MAIN5, details: advSteps, holiday: 'shift' },
+    { id: 'bill2', title: 'BILLING-2', type: 'billing', mode: 'monthly', days: [19], people: ['P', 'B'], start: '10:00', end: '18:30', companies: MAIN5.concat(OTHER), details: billSteps + ' Includes other contractors.', holiday: 'shift' },
+    { id: 'out2', title: 'Outstation site measurement', type: 'outstation', mode: 'monthly', days: [20, 21, 22, 23], people: ['N', 'R'], start: '10:00', end: '18:30', siteGroup: 'outstation', maxDays: 4,
       details: 'Max 4 days including sheet preparation and cement calculations.', holiday: 'skip' },
-    { id: 'est', title: 'Estimation works and comparisons', type: 'office', mode: 'monthly', days: [20, 21, 22, 23], people: ['P', 'B'],
-      start: '10:00', end: '18:30', details: 'Estimation works and works of comparisons. Compulsory time allotment.', holiday: 'skip' },
-    { id: 'meet-sunniva-2', title: 'Joint meet: Sunniva', type: 'meeting', mode: 'monthly', days: [24], people: ['N', 'R', 'S', 'P', 'B'],
-      start: '09:15', end: '10:00', companies: ['sunniva-sdl', 'sunniva-dhule'], details: meetDetail, holiday: 'shift', agenda: agenda45('Sunniva') },
-    { id: 'meet-kipl-2', title: 'Joint meet: KIPL', type: 'meeting', mode: 'monthly', days: [25], people: ['N', 'R', 'S', 'P', 'B'],
-      start: '09:15', end: '10:00', companies: ['kipl-sdl', 'kipl-sol', 'kipl-sdal', 'kipl-misc', 'kipl-dhule'], details: meetDetail, holiday: 'shift', agenda: agenda45('KIPL') },
-    { id: 'meet-mahto-2', title: 'Joint meet: Mahto and other contractors', type: 'meeting', mode: 'monthly', days: [26], people: ['N', 'R', 'S', 'P', 'B'],
-      start: '09:15', end: '10:00', companies: ['mahto-sol', 'mahto-dhanbad-lr', 'mahto-dhanbad-bldg', 'mahto-other'], details: meetDetail, holiday: 'shift', agenda: agenda45('Mahto & others') },
-    { id: 'site-c3', title: 'Site measurements C-3 (main contractors)', type: 'site', mode: 'monthly', days: [24, 25, 26, 27, 28, 29, 30], people: ['N', 'R', 'S', 'P'],
-      start: '10:00', end: '18:30', siteGroup: 'main', cycle: 'C-3',
-      details: 'Main contractors, with sheet preparation and cement calculation.', holiday: 'skip' },
-    { id: 'review', title: 'Daily quick review', type: 'review', mode: 'daily', people: ['N', 'R', 'S', 'P', 'B'],
-      start: '18:30', end: '19:00',
-      details: 'B checks the day\'s work of everyone and updates the timetable. People on outstation sites report by phone.' },
-    { id: 'ppv-s', title: 'PPV works (S)', type: 'office', mode: 'weekly', perWeek: 2, people: ['S'],
-      start: '10:00', end: '18:30', companies: ['ppv'],
-      details: 'PPV works of 2 days a week. Placed automatically on S\'s free working days.' }
-  ];
-
-  const holidays = [
-    { date: '2026-11-08', name: 'Diwali' },
-    { date: '2026-11-09', name: 'Diwali' },
-    { date: '2026-11-10', name: 'Diwali' },
-    { date: '2026-11-11', name: 'Diwali' }
-  ];
-
-  const notes = [
-    'P & P1 are the same person.',
-    'Working time 10 to 7, lunch 1.30 to 2.30.',
-    'Timetable from 5th Nov to 9th Dec.',
-    'Diwali holidays 8, 9, 10, 11 November.',
-    'Sundays are holidays but may be adjusted for a work streak.',
-    'Person-wise timetable with time allotment per day, per week, per month.',
-    'Company-wise chart: each company gets separate days for work on site.',
-    'Meeting timetable with agenda and minutes for each agenda item.',
-    'Timetable for each advance payment day for P1 & B.',
-    'Timetable for each billing day for P1 & B.',
-    'Daily quick review agenda for B to check everyone\'s work.'
+    { id: 'est', title: 'Estimation works and works of comparisons', type: 'office', mode: 'monthly', days: [20, 21, 22, 23], people: ['P', 'B'], start: '10:00', end: '18:30', details: 'Compulsory time allotment.', holiday: 'skip' },
+    { id: 'meet-sunniva-2', title: 'Joint meet: Sunniva', type: 'meeting', mode: 'monthly', days: [24], people: ALLP, start: '09:15', end: '10:00', companies: ['sunniva-sdl'], details: meetDetail, holiday: 'shift', agenda: ag('Sunniva', A45) },
+    { id: 'meet-kipl-2', title: 'Joint meet: KIPL', type: 'meeting', mode: 'monthly', days: [25], people: ALLP, start: '09:15', end: '10:00', companies: ['kipl-sdl', 'kipl-sol', 'kipl-misc'], details: meetDetail, holiday: 'shift', agenda: ag('KIPL', A45) },
+    { id: 'meet-mahto-2', title: 'Joint meet: Mahto, other contractor bills', type: 'meeting', mode: 'monthly', days: [26], people: ALLP, start: '09:15', end: '10:00', companies: ['mahto-sol'].concat(OTHER), details: meetDetail, holiday: 'shift', agenda: ag('Mahto & other contractors', A45) },
+    { id: 'site-c3', title: 'Site measurements C-3', type: 'site', mode: 'monthly', days: [24, 25, 26, 27, 28, 29, 30], people: ['N', 'R', 'S', 'P'], start: '10:00', end: '18:30', siteGroup: 'main', cycle: 'C-3',
+      details: 'Main contractors with sheet preparation, cement calculation.', holiday: 'skip' },
+    { id: 'review', title: 'Daily check by B', type: 'review', mode: 'daily', people: ['B'], start: '18:30', end: '19:00',
+      details: 'B checks the day\'s work of everyone and maintains the timetable.' },
+    { id: 'ppv-s', title: 'PPV works (S)', type: 'office', mode: 'weekly', perWeek: 2, people: ['S'], start: '10:00', end: '18:30', companies: ['ppv-works'],
+      details: 'PPV works of 2 days a week, placed on S\'s free working days.' }
   ];
 
   g.DEFAULT_PLAN = {
-    version: 1,
+    version: 2,
     title: 'Works timetable',
-    settings: {
-      start: '2026-11-05', end: '2026-12-09',
-      workStart: '10:00', workEnd: '19:00', lunchStart: '13:30', lunchEnd: '14:30',
-      sundayOff: true, sundayStreak: true
-    },
-    holidays, people, companies, responsibilities, tasks, notes,
-    overrides: {}, visitOverrides: {}, status: {}, reviews: {}, extra: []
+    settings: { start: '2026-11-05', end: '2026-12-09', workStart: '10:00', workEnd: '19:00', lunchStart: '13:30', lunchEnd: '14:30', sundayOff: true, sundayStreak: true, maxHours: 9 },
+    holidays: [{ date: '2026-11-08', name: 'Diwali' }, { date: '2026-11-09', name: 'Diwali' }, { date: '2026-11-10', name: 'Diwali' }, { date: '2026-11-11', name: 'Diwali' }],
+    people, companies, responsibilities, tasks,
+    notes: [
+      'P & P1 are the same person.', 'Working time 10 to 7, lunch 1.30 to 2.30.', 'Timetable from 5th Nov to 9th Dec.',
+      'Diwali holidays 8, 9, 10, 11 November.', 'Sundays holidays but may be adjusted for work streak.',
+      'Person-wise timetable with time allotment per day, per week, per month.', 'Company-wise chart: each company gets separate days for work on site.',
+      'Meeting timetable with agenda and minutes for each agenda item.', 'Timetable for each advance payment day for P1 & B.',
+      'Timetable for each billing day for P1 & B.', 'Daily quick review agenda for B to check everyone\'s work.',
+      'Anyone out of station does not join the meeting.'
+    ],
+    away: {}, overrides: {}, visitOverrides: {}, status: {}, reviews: {}, extra: []
   };
 })(window);

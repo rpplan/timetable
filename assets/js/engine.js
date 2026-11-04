@@ -177,6 +177,24 @@
         text: `${t.title} moved from ${D.nice(p.planned)} (${hol[p.planned] || 'Sunday'}) to ${D.nice(o.date)}.` });
     });
 
+    // Outstation: who actually goes (the user can choose per run), and they skip meetings and in-town work those days
+    const away = plan.away || {};
+    const awayPD = {};
+    live.forEach(o => {
+      if (o.type !== 'outstation') return;
+      const ch = o.runKey && away[o.runKey];
+      if (ch && !(plan.overrides[o.key] && plan.overrides[o.key].people)) o.people = o.people.filter(pid => ch[pid] !== false);
+      o.people.forEach(pid => { awayPD[pid + '|' + o.date] = true; });
+    });
+    live.forEach(o => {
+      if (o.type === 'outstation') return;
+      if (!(o.type === 'meeting' || o.type === 'site')) return;
+      const gone = o.people.filter(pid => awayPD[pid + '|' + o.date]);
+      if (gone.length) { o.away = gone; o.people = o.people.filter(pid => !gone.includes(pid)); }
+    });
+    Object.keys(book).forEach(k => delete book[k]);
+    live.forEach(addBook);
+
     // Weekly flexible tasks: place on free working days
     plan.tasks.filter(t => t.mode === 'weekly').forEach(t => {
       const ppl = normPeople(plan, t.people);
@@ -212,29 +230,48 @@
     // Status
     live.forEach(o => { o.status = (plan.status && plan.status[o.key]) || 'planned'; o.mins = workMins(o.start, o.end, st); });
 
-    // Site visits: each person's companies get separate days inside each site run
+    // Site visits: each person's companies get their own day inside each site run.
+    // A company shared by two people gets different days, unless it is marked "together" (then both go the same day).
     const visits = [];
     const runs = {};
     live.filter(o => o.siteGroup && o.runKey).forEach(o => { (runs[o.runKey] = runs[o.runKey] || []).push(o); });
     Object.keys(runs).forEach(rk => {
       const list = runs[rk].sort((a, b) => a.date < b.date ? -1 : 1);
       const t = taskById[list[0].taskId];
-      const dates = list.map(o => o.date);
       const ppl = normPeople(plan, t.people);
+      const pDates = {}; ppl.forEach(pid => { pDates[pid] = list.filter(o => o.people.includes(pid)).map(o => o.date); });
+      const taken = {};     // pid -> set of dates already used for a company
+      const usedBy = {};    // company -> set of dates already used by someone else
+      ppl.forEach(pid => { taken[pid] = new Set(); });
+      const push = (cid, pid, date, together) => {
+        const vk = `${rk}|${cid}|${pid}`;
+        const vo = (plan.visitOverrides || {})[vk];
+        const d = (vo && vo.date) || date;
+        if (!d) {
+          if (list.some(o => inWin(o.date)) && (pDates[pid] || []).length) notes.push({ level: 'warn', kind: 'novisit', key: vk, date: list[0].date, taskId: t.id,
+            text: `${companyName(plan, cid)} has no site day for ${personName(plan, pid)} in ${t.title} (${rk.split('@')[1]}).` });
+          return;
+        }
+        taken[pid] && taken[pid].add(d); (usedBy[cid] = usedBy[cid] || new Set()).add(d);
+        visits.push({ key: vk, runKey: rk, taskId: t.id, company: cid, person: (vo && vo.person) || pid, date: d, together: !!together,
+          cycle: t.cycle || (t.siteGroup === 'outstation' ? 'Outstation' : ''), moved: !!vo, siteGroup: t.siteGroup });
+      };
+      const comp = id => plan.companies.find(c => c.id === id) || {};
+      const has = (pid, cid) => (((plan.responsibilities[pid] || {})[t.siteGroup]) || []).includes(cid);
+      // 1. companies visited together (same day for everyone who has them)
+      const tog = plan.companies.filter(c => c.together && ppl.some(pid => has(pid, c.id)));
+      tog.forEach(c => {
+        const holders = ppl.filter(pid => has(pid, c.id) && pDates[pid].length);
+        if (!holders.length) return;
+        const common = pDates[holders[0]].filter(d => holders.every(h => pDates[h].includes(d) && !taken[h].has(d)));
+        holders.forEach(h => push(c.id, h, common[0] || null, holders.length > 1));
+      });
+      // 2. everything else, one company per day per person, shared companies on different days
       ppl.forEach(pid => {
-        const comps = ((plan.responsibilities[pid] || {})[t.siteGroup]) || [];
-        comps.forEach((cid, i) => {
-          const vk = `${rk}|${cid}`;
-          const vo = (plan.visitOverrides || {})[vk];
-          const v = { key: vk, runKey: rk, taskId: t.id, company: cid, person: (vo && vo.person) || pid,
-            date: (vo && vo.date) || dates[i] || null, cycle: t.cycle || (t.siteGroup === 'outstation' ? 'Outstation' : ''), moved: !!vo,
-            siteGroup: t.siteGroup };
-          if (!v.date) {
-            if (list.some(o => inWin(o.date))) notes.push({ level: 'warn', kind: 'novisit', key: vk, date: dates[0], taskId: t.id,
-              text: `${companyName(plan, cid)} has no site day in ${t.title} (${rk.split('@')[1]}): ${personName(plan, pid)} has more companies than days.` });
-            return;
-          }
-          visits.push(v);
+        (((plan.responsibilities[pid] || {})[t.siteGroup]) || []).forEach(cid => {
+          if (comp(cid).together) return;
+          const d = pDates[pid].find(x => !taken[pid].has(x) && !(usedBy[cid] && usedBy[cid].has(x)));
+          push(cid, pid, d || null);
         });
       });
     });
@@ -266,7 +303,9 @@
       if (total > maxMins) out.push({ level: 'warn', kind: 'overload', date, person: p, keys: list.map(o => o.key),
         text: `${personName(plan, p)} has ${T.hrs(total)} h of work on ${D.nice(date)} (limit ${st.maxHours || 9} h).` });
     });
+    const la = T.m(st.lunchStart), lb = T.m(st.lunchEnd);
     gen.occs.forEach(o => {
+      if (T.m(o.start) >= la && T.m(o.end) <= lb && T.m(o.end) > T.m(o.start)) out.push({ level: 'warn', kind: 'lunch', date: o.date, keys: [o.key], text: `${o.title} on ${D.nice(o.date)} is in the lunch slot (${st.lunchStart}–${st.lunchEnd}). Lunch is kept free.` });
       if (gen.hol[o.date]) out.push({ level: 'warn', kind: 'holiday', date: o.date, keys: [o.key], text: `${o.title} is on a holiday (${gen.hol[o.date]}, ${D.nice(o.date)}).` });
       if (!o.people.length) out.push({ level: 'warn', kind: 'nobody', date: o.date, keys: [o.key], text: `${o.title} on ${D.nice(o.date)} has nobody assigned.` });
     });

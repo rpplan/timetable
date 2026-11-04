@@ -1,8 +1,8 @@
 /* Plan storage: browser save, undo/redo, office copy (data/plan.json), share links. */
 (function (g) {
   'use strict';
-  const KEY = 'works-timetable-plan-v1';
-  const PREF = 'works-timetable-prefs-v1';
+  const KEY = 'works-timetable-plan-v2';   // v2: new company list from the updated sheet
+  const PREF = 'works-timetable-prefs-v2';
   const clone = o => JSON.parse(JSON.stringify(o));
 
   const Store = {
@@ -82,7 +82,7 @@
   function migrate(p) {
     const d = g.DEFAULT_PLAN;
     p = p || {};
-    ['overrides', 'visitOverrides', 'status', 'reviews'].forEach(k => { if (!p[k] || typeof p[k] !== 'object') p[k] = {}; });
+    ['overrides', 'visitOverrides', 'status', 'reviews', 'away'].forEach(k => { if (!p[k] || typeof p[k] !== 'object') p[k] = {}; });
     if (!Array.isArray(p.extra)) p.extra = [];
     if (!Array.isArray(p.holidays)) p.holidays = clone(d.holidays);
     if (!Array.isArray(p.people)) p.people = clone(d.people);
@@ -92,7 +92,8 @@
     p.people.forEach(x => { if (!p.responsibilities[x.id]) p.responsibilities[x.id] = { main: [], outstation: [], other: [], duties: '' }; });
     p.settings = Object.assign({}, d.settings, p.settings || {});
     if (!p.notes) p.notes = clone(d.notes);
-    p.version = 1;
+    p.tasks.forEach(t => (t.agenda || []).forEach(a => { if (!Array.isArray(a.owners)) a.owners = a.owner ? [a.owner] : []; delete a.owner; }));
+    p.version = 2;
     return p;
   }
 
