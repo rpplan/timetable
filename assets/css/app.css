@@ -310,3 +310,37 @@ body.modal-open { overflow: hidden; }
   body, .wrap { background: #fff; padding: 0; }
   .card, .stats > div { box-shadow: none; border: 1px solid var(--line); }
 }
+
+/* ---------- version 3: slots, past days, remarks ---------- */
+.day li.slot-h { background: none; border-left: 0; padding: 8px 2px 0; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.day li.slot-h:first-child { padding-top: 0; }
+.day li.freeslot { background: none; border: 1px dashed var(--line); border-left-width: 4px; color: var(--muted); font-style: italic; }
+.day li.notime, .pill.notime { background: var(--amber-soft); border-left-color: var(--amber); }
+.day li.notime .tm { color: var(--amber); font-weight: 700; }
+
+/* past days: inactive and grey */
+.card.past { background: #eef0f3; box-shadow: none; border-top-color: #b9bec7; }
+.card.past .av { filter: grayscale(1); opacity: .65; }
+.card.past h2, .card.past .name { color: #6b7385; }
+.day li.past { background: #e4e7ec; border-left-color: #b4bac4; color: #5d6575; flex-wrap: wrap; }
+.day li.past.done { border-left-color: var(--green); }
+.day li.past.not { border-left-color: var(--red); }
+.day li.past.part, .day li.past.moved { border-left-color: var(--amber); }
+.day li.past .pt-l { font-weight: 600; flex: 1; }
+.day li.dayrmk { background: none; border-left-color: transparent; padding-left: 0; }
+.rmk { display: grid; grid-template-columns: 130px 1fr; gap: 6px; width: 100%; }
+.rmk select, .rmk input { border: 1px solid #cfd4dc; border-radius: 8px; padding: 5px 8px; background: #fff; font-size: 13px; min-width: 0; }
+.banner.past-b { background: #e4e7ec; color: #4a5263; }
+.pill.past { filter: grayscale(1); opacity: .6; cursor: default; }
+.week td.past, .week th.past { background: #eef0f3; }
+.week th.past b { color: #8a91a0; }
+.offday { display: block; font-size: 12px; color: var(--muted); font-style: italic; }
+.dl-row.past .dd b { color: #8a91a0; }
+.dchip.past { cursor: default; filter: grayscale(1); opacity: .6; }
+.sheet.past .slots li { background: #e4e7ec; }
+.offs { white-space: nowrap; text-align: left !important; }
+.offs > * { margin-right: 3px; }
+@media (max-width: 640px) { .rmk { grid-template-columns: 1fr; } .offs { white-space: normal; } }
+@media print { .rmk select, .rmk input { border: 0; padding: 0; } }
+.card.past .where { background: #dde1e7; color: #5d6575; }
+.card.past .rmk { grid-template-columns: minmax(96px, .8fr) 1.4fr; }

@@ -40,6 +40,11 @@
     task(id) { return Store.plan.tasks.find(t => t.id === id); },
     isWorking(d) { return !this.data.gen.hol[d] && !(D.dow(d) === 0 && Store.plan.settings.sundayOff); },
     visitsFor(o, pid) { return this.data.visitsBy[o.runKey + '|' + pid + '|' + o.date] || []; },
+    isPast(d) { return d < D.today(); },
+    entry(o, pid) { return (this.data.gen.sched[pid + '|' + o.date] || []).find(e => e.key === o.key) || null; },
+    slotLabel(i) { const s = this.data.gen.slots[i]; return s ? `Slot ${i + 1} ${T.s(s[0])}–${T.s(s[1])}` : ''; },
+    slotsText() { return this.data.gen.slots.map((s, i) => this.slotLabel(i)).join(' and '); },
+    remark(key, pid) { return (Store.plan.remarks || {})[key + '|' + pid] || {}; },
     defaultDate() { const st = Store.plan.settings, t = D.today(); return (t >= st.start && t <= st.end) ? t : st.start; },
 
     /* What this person does in this piece of work (site runs name the company) */
@@ -51,30 +56,31 @@
       }
       return o.title;
     },
-    /* Time text with the lunch hour taken out */
-    timeText(o) {
-      const st = Store.plan.settings, la = T.m(st.lunchStart), lb = T.m(st.lunchEnd), a = T.m(o.start), b = T.m(o.end);
-      if (a < la && b > lb) return `${o.start}–${st.lunchStart}, ${st.lunchEnd}–${o.end}`;
-      return `${o.start}–${o.end}`;
+    /* Time text: the person's fitted time when given, otherwise the planned time without the break */
+    timeText(o, pid) {
+      const e = pid ? this.entry(o, pid) : null;
+      if (e) return e.noTime ? 'No free slot' : Engine.partsText(e.parts);
+      return Engine.partsText(Engine.minusGaps(T.m(o.start), T.m(o.end), Store.plan.settings));
     },
-    /* A person's day: work rows plus the lunch row, in time order */
+    /* A person's day as fitted into the slots: [{o, e, a, b, slot}] one row per time part, plus "no time" rows */
     dayRows(date, pid) {
-      const st = Store.plan.settings;
-      const mine = (this.data.byDate[date] || []).filter(o => o.people.includes(pid));
-      if (!mine.length) return [];
-      const rows = mine.map(o => ({ o, t: T.m(o.start) }));
-      rows.push({ lunch: true, t: T.m(st.lunchStart) });
-      return rows.sort((a, b) => a.t - b.t || (a.lunch ? 1 : -1));
+      const list = this.data.gen.sched[pid + '|' + date] || [], slots = this.data.gen.slots, rows = [];
+      list.forEach(e => {
+        if (e.noTime) { rows.push({ o: e.o, e, a: 99999, b: 99999, slot: -1, noTime: true }); return; }
+        e.parts.forEach(p => rows.push({ o: e.o, e, a: p[0], b: p[1], slot: slots.findIndex(s => p[0] >= s[0] && p[0] < s[1]) }));
+      });
+      return rows.sort((x, y) => x.a - y.a);
     },
     whereLabel(date, pid) {
       const hol = this.data.gen.hol[date];
       if (hol) return { k: 'off', text: hol };
+      if (Engine.personOff(Store.plan, pid, date) && !(this.data.byDate[date] || []).some(o => o.people.includes(pid))) return { k: 'off', text: 'Weekly day off' };
       const mine = (this.data.byDate[date] || []).filter(o => o.people.includes(pid) && o.type !== 'review');
       const out = mine.find(o => o.type === 'outstation');
       if (out) { const v = this.visitsFor(out, pid); return { k: 'out', text: 'Outstation' + (v.length ? ': ' + v.map(x => this.cname(x.company)).join(', ') : '') }; }
       const site = mine.find(o => o.type === 'site');
       if (site) { const v = this.visitsFor(site, pid); return { k: 'site', text: v.length ? 'On site: ' + v.map(x => this.cname(x.company)).join(', ') : 'Sheets & cement calculation' }; }
-      if (mine.length) return { k: 'office', text: 'In office' };
+      if (mine.length) return { k: 'office', text: mine.some(o => o.noSite) ? 'In office (no site work today)' : 'In office' };
       if (D.dow(date) === 0) return { k: 'off', text: 'Sunday' };
       return { k: 'free', text: 'Free' };
     },
@@ -86,9 +92,13 @@
       opts = opts || {};
       const ty = TYPES[o.type] || TYPES.office;
       const clash = this.data.clashKeys.has(o.key) && (!pid || this.data.clashPD.has(pid + '|' + o.date));
-      return `<button type="button" class="pill ${clash ? 'clash' : ''} ${o.status === 'done' ? 'done' : ''}" style="--c:${ty.color};--bg:${ty.bg}" data-occ="${esc(o.key)}" draggable="true" ${pid ? `data-from="${esc(pid)}"` : ''}
-        title="${esc(o.title + '\n' + this.timeText(o) + '\n' + o.people.map(p => this.pname(p)).join(', ') + (o.away && o.away.length ? '\nOut of station: ' + o.away.map(p => this.pname(p)).join(', ') : '') + (clash ? '\nClash: booked twice' : ''))}">
-        ${opts.time !== false ? `<span class="pt">${o.start}</span>` : ''}<span class="pl">${esc(pid ? this.personLabel(o, pid) : o.title)}</span>${opts.people ? `<span class="pp">${o.people.map(p => `<i style="--pc:${this.pcolor(p)}">${esc(this.person(p) ? this.person(p).id : p)}</i>`).join('')}</span>` : ''}</button>`;
+      const e = pid ? this.entry(o, pid) : null, past = this.isPast(o.date);
+      const startT = e && e.parts.length ? T.s(e.parts[0][0]) : o.start;
+      const rk = pid ? this.remark(o.key, pid) : {};
+      const tag = past ? 'span' : 'button';
+      return `<${tag} ${past ? '' : 'type="button"'} class="pill ${clash ? 'clash' : ''} ${o.status === 'done' || rk.s === 'done' ? 'done' : ''} ${past ? 'past' : ''} ${e && e.noTime ? 'notime' : ''}" style="--c:${ty.color};--bg:${ty.bg}" ${past ? '' : `data-occ="${esc(o.key)}" draggable="true"`} ${pid && !past ? `data-from="${esc(pid)}"` : ''}
+        title="${esc(o.title + '\n' + this.timeText(o, pid) + (rk.s ? '\nStatus: ' + (REMARK_LABELS[rk.s] || rk.s) : '') + (rk.t ? '\nRemarks: ' + rk.t : '') + '\n' + o.people.map(p => this.pname(p)).join(', ') + (o.away && o.away.length ? '\nOut of station: ' + o.away.map(p => this.pname(p)).join(', ') : '') + (clash ? '\nClash: booked twice' : ''))}">
+        ${opts.time !== false ? `<span class="pt">${e && e.noTime ? '–' : startT}</span>` : ''}<span class="pl">${esc(pid ? this.personLabel(o, pid) : o.title)}</span>${opts.people ? `<span class="pp">${o.people.map(p => `<i style="--pc:${this.pcolor(p)}">${esc(this.person(p) ? this.person(p).id : p)}</i>`).join('')}</span>` : ''}</${tag}>`;
     },
     typeTag(t) { const ty = TYPES[t] || TYPES.office; return `<span class="tag" style="--c:${ty.color};--bg:${ty.bg}">${ty.label}</span>`; },
     peoplePicker(name, selected, opts) {
@@ -126,11 +136,13 @@
     },
     moveOcc(key, date) {
       const o = this.data.byKey[key]; if (!o || o.date === date) return;
+      if (this.isPast(date) || this.isPast(o.date)) { toast('Past days are closed. Write a remark instead.'); return; }
       if (key.startsWith('x:')) return this.commit(`Moved ${o.title} to ${D.nice(date)}`, p => { p.extra.find(x => 'x:' + x.id === key).date = date; });
       this.commit(`Moved ${o.title} to ${D.nice(date)}`, p => { p.overrides[key] = Object.assign({}, p.overrides[key] || {}, { date }); });
     },
     reassign(key, from, to) {
       const o = this.data.byKey[key]; if (!o || from === to) return;
+      if (this.isPast(o.date)) { toast('Past days are closed. Write a remark instead.'); return; }
       const ppl = o.people.filter(p => p !== from); if (!ppl.includes(to)) ppl.push(to);
       const visits = o.siteGroup ? this.visitsFor(o, from) : [];
       this.commit(`${this.pname(to)} now does ${this.personLabel(o, from)} on ${D.nice(o.date)}`, p => {
@@ -164,25 +176,31 @@
     /* ---------- dialogs ---------- */
     openOcc(key) {
       const o = this.data.byKey[key]; if (!o) return;
+      if (this.isPast(o.date)) { toast('This day is over, so it can no longer be changed. Add a remark on the Today page.'); return; }
       const plan = Store.plan, isExtra = key.startsWith('x:'), t = isExtra ? null : this.task(o.taskId);
       const clashes = this.data.iss.filter(i => i.level === 'clash' && (i.keys || []).includes(key));
       const outRun = o.type === 'outstation' && o.runKey ? this.outstationRuns().filter(r => r.runKey === o.runKey) : [];
       const site = o.siteGroup ? o.people.map(pid => `<li>${this.who(pid)} <span>${esc(this.personLabel(o, pid))}</span></li>`).join('') : '';
+      const times = o.people.map(pid => `<li>${this.who(pid)} <b>${esc(this.timeText(o, pid))}</b></li>`).join('');
       modal({
         title: o.title,
-        body: `<p class="muted">${this.typeTag(o.type)} ${esc(D.nice(o.date, { long: true }))}, ${esc(this.timeText(o))}${o.shifted ? `. Moved from ${D.nice(o.planned)} (holiday)` : ''}</p>
+        body: `<p class="muted">${this.typeTag(o.type)} ${esc(D.nice(o.date, { long: true }))}, planned ${esc(this.timeText(o))}${o.shifted ? `. Moved from ${D.nice(o.planned)}` : ''}</p>
+          ${o.inOffice && o.inOffice.length ? `<p class="note">In the office, no site work today: ${o.inOffice.map(x => esc(this.pname(x.pid) + ' (' + x.why + ')')).join(', ')}</p>` : ''}
+          ${o.offToday && o.offToday.length ? `<p class="note">Weekly day off: ${o.offToday.map(p => esc(this.pname(p))).join(', ')}</p>` : ''}
           ${clashes.map(c => `<p class="alert">${esc(c.text)}</p>`).join('')}
           ${o.away && o.away.length ? `<p class="note">Out of station, not attending: ${o.away.map(p => esc(this.pname(p))).join(', ')}</p>` : ''}
           ${outRun.length ? `<div class="box"><b>Who goes outstation this trip?</b><p class="muted small">Untick anyone who stays in town. People who go do not join meetings on those days.</p>
             <div class="picks">${outRun.map(r => `<label class="pick" style="--pc:${this.pcolor(r.person)}"><input type="checkbox" data-away="${esc(r.runKey)}|${esc(r.person)}" ${r.going ? 'checked' : ''}><span>${esc(this.pname(r.person))}</span></label>`).join('')}</div></div>` : ''}
           <form id="occ-form" class="form">
-            <div class="row3"><label>Date<input type="date" name="date" value="${o.date}" min="${plan.settings.start}" max="${plan.settings.end}" required></label>
+            <div class="row3"><label>Date<input type="date" name="date" value="${o.date}" min="${D.today() > plan.settings.start ? D.today() : plan.settings.start}" max="${plan.settings.end}" required></label>
             <label>From<input type="time" name="start" value="${o.start}" step="300" required></label>
             <label>To<input type="time" name="end" value="${o.end}" step="300" required></label></div>
             <fieldset><legend>Who</legend>${this.peoplePicker('pp', o.people)}</fieldset>
             <label>Note<input name="note" value="${esc(o.note || '')}" placeholder="Optional note for this day"></label>
             <label class="check"><input type="checkbox" name="done" ${o.status === 'done' ? 'checked' : ''}> Done</label>
           </form>
+          <p class="muted small">Changing the times here fixes them for this day; the rest of each person's day is fitted around them.</p>
+          ${times ? `<h3>Time for each person</h3><ul class="list">${times}</ul>` : ''}
           ${site ? `<h3>Site days</h3><ul class="list">${site}</ul>` : ''}
           ${o.details ? `<p class="muted small">${esc(o.details)}</p>` : ''}`,
         foot: `<button type="button" class="btn ghost danger" id="occ-del">${isExtra ? 'Delete' : 'Cancel this day'}</button>
@@ -194,8 +212,8 @@
             e.preventDefault(); const fd = new FormData(e.target);
             const patch = { date: fd.get('date'), start: fd.get('start'), end: fd.get('end'), note: fd.get('note'), people: fd.getAll('pp') };
             if (T.m(patch.end) <= T.m(patch.start)) { toast('The end time must be after the start time.'); return; }
-            const st = plan.settings;
-            if (T.m(patch.start) >= T.m(st.lunchStart) && T.m(patch.start) < T.m(st.lunchEnd)) { toast(`Lunch is ${st.lunchStart}–${st.lunchEnd}. Start before or after lunch.`); return; }
+            if (App.isPast(patch.date)) { toast('Pick today or a later day.'); return; }
+            if (Engine.inGap(patch.start, plan.settings)) { toast(`Start inside a working slot: ${App.slotsText()}.`); return; }
             closeModal();
             App.commit(`Saved ${o.title}, ${D.nice(patch.date)}`, p => {
               if (isExtra) Object.assign(p.extra.find(x => 'x:' + x.id === key), patch);
@@ -218,30 +236,42 @@
     },
 
     addExtra(date, pid) {
-      const plan = Store.plan;
+      const plan = Store.plan, slots = this.data.gen.slots, minD = D.today() > plan.settings.start ? D.today() : plan.settings.start;
+      date = date && date >= minD ? date : (this.defaultDate() >= minD ? this.defaultDate() : minD);
+      const choices = slots.map((s, i) => [`s${i}`, this.slotLabel(i), T.s(s[0]), T.s(s[1])]);
+      if (slots.length > 1) choices.push(['day', `Whole day ${T.s(slots[0][0])}–${T.s(slots[slots.length - 1][1])}`, T.s(slots[0][0]), T.s(slots[slots.length - 1][1])]);
       modal({
         title: 'Add work',
         body: `<form id="x-form" class="form">
           <label>What<input name="title" required placeholder="For example: Bank visit"></label>
-          <div class="row3"><label>Date<input type="date" name="date" value="${date || this.defaultDate()}" min="${plan.settings.start}" max="${plan.settings.end}" required></label>
-          <label>From<input type="time" name="start" value="10:00" step="300" required></label><label>To<input type="time" name="end" value="13:30" step="300" required></label></div>
+          <label>When<select id="x-slot">${choices.map(c => `<option value="${c[0]}" data-a="${c[2]}" data-b="${c[3]}">${esc(c[1])}</option>`).join('')}<option value="custom">Other time</option></select></label>
+          <div class="row3"><label>Date<input type="date" name="date" value="${date}" min="${minD}" max="${plan.settings.end}" required></label>
+          <label>From<input type="time" name="start" value="${choices[0][2]}" step="300" required></label><label>To<input type="time" name="end" value="${choices[0][3]}" step="300" required></label></div>
+          <p class="muted small">The other work of these people on that day is moved around this entry automatically.</p>
           <fieldset><legend>Who</legend>${this.peoplePicker('pp', pid ? [pid] : [])}</fieldset>
           <div class="row2"><label>Kind<select name="type">${Object.keys(TYPES).map(k => `<option value="${k}" ${k === 'office' ? 'selected' : ''}>${TYPES[k].label}</option>`).join('')}</select></label>
-          <label>Company<select name="company"><option value="">None</option>${companyOptions('')}</select></label></div></form>`,
+          <label>Company<select name="company"><option value="">None</option>${companyOptions('')}</select></label></div>
+          <label class="check"><input type="checkbox" name="noSite"> Office work: no site measurement for these people that day</label></form>`,
         foot: `<span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" form="x-form" class="btn primary">Add</button>`,
-        onOpen: m => $('#x-form', m).onsubmit = e => {
-          e.preventDefault(); const fd = new FormData(e.target); const st = plan.settings;
-          if (T.m(fd.get('end')) <= T.m(fd.get('start'))) { toast('The end time must be after the start time.'); return; }
-          if (T.m(fd.get('start')) >= T.m(st.lunchStart) && T.m(fd.get('start')) < T.m(st.lunchEnd)) { toast(`Lunch is ${st.lunchStart}–${st.lunchEnd}. Start before or after lunch.`); return; }
-          const x = { id: 'e' + Date.now().toString(36), title: fd.get('title'), date: fd.get('date'), start: fd.get('start'), end: fd.get('end'), type: fd.get('type'), people: fd.getAll('pp'), companies: fd.get('company') ? [fd.get('company')] : [], details: '' };
-          closeModal(); App.commit(`Added ${x.title}, ${D.nice(x.date)}`, p => p.extra.push(x));
+        onOpen: m => {
+          const sel = $('#x-slot', m), f = $('#x-form', m);
+          sel.onchange = () => { const op = sel.selectedOptions[0]; if (op.dataset.a) { f.start.value = op.dataset.a; f.end.value = op.dataset.b; } };
+          [f.start, f.end].forEach(i => i.addEventListener('input', () => { sel.value = 'custom'; }));
+          f.onsubmit = e => {
+            e.preventDefault(); const fd = new FormData(e.target);
+            if (T.m(fd.get('end')) <= T.m(fd.get('start'))) { toast('The end time must be after the start time.'); return; }
+            if (App.isPast(fd.get('date'))) { toast('Pick today or a later day.'); return; }
+            if (Engine.inGap(fd.get('start'), plan.settings)) { toast(`Start inside a working slot: ${App.slotsText()}.`); return; }
+            const x = { id: 'e' + Date.now().toString(36), title: fd.get('title'), date: fd.get('date'), start: fd.get('start'), end: fd.get('end'), type: fd.get('type'), people: fd.getAll('pp'), companies: fd.get('company') ? [fd.get('company')] : [], details: '', noSite: !!fd.get('noSite') };
+            closeModal(); App.commit(`Added ${x.title}, ${D.nice(x.date)}. Other work moved around it.`, p => p.extra.push(x));
+          };
         }
       });
     },
 
     editTask(id) {
       const plan = Store.plan, isNew = !id;
-      const t = isNew ? { id: 't' + Date.now().toString(36), title: '', type: 'office', mode: 'monthly', days: [], people: [], start: '10:00', end: '13:30', companies: [], details: '', holiday: 'shift' } : Store.clone(this.task(id));
+      const t = isNew ? { id: 't' + Date.now().toString(36), title: '', type: 'office', mode: 'monthly', days: [], people: [], start: '10:30', end: '13:30', companies: [], details: '', holiday: 'shift' } : Store.clone(this.task(id));
       modal({
         title: isNew ? 'New repeating work' : t.title, wide: true,
         body: `<form id="t-form" class="form">
@@ -253,6 +283,7 @@
           <label data-for="weekly">Days per week<input type="number" name="perWeek" min="1" max="6" value="${t.perWeek || 2}"></label>
           <label data-for="monthly">If the date is a holiday<select name="holiday"><option value="shift" ${t.holiday !== 'skip' ? 'selected' : ''}>Move to the next working day</option><option value="skip" ${t.holiday === 'skip' ? 'selected' : ''}>Skip it</option></select></label>
           <fieldset><legend>Who</legend>${this.peoplePicker('pp', Engine.normPeople(plan, t.people))}</fieldset>
+          <label class="check"><input type="checkbox" name="noSite" ${t.noSite ? 'checked' : ''}> Office work: these people do no site measurement on these days</label>
           <label>Details<textarea name="details" rows="2">${esc(t.details || '')}</textarea></label></form>`,
         foot: `${!isNew ? '<button type="button" class="btn ghost danger" id="t-del">Delete</button>' : ''}<span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" form="t-form" class="btn primary">Save</button>`,
         onOpen: m => {
@@ -261,7 +292,8 @@
           $('#t-form', m).onsubmit = e => {
             e.preventDefault(); const fd = new FormData(e.target);
             if (T.m(fd.get('end')) <= T.m(fd.get('start'))) { toast('The end time must be after the start time.'); return; }
-            Object.assign(t, { title: fd.get('title'), type: fd.get('type'), mode: fd.get('mode'), start: fd.get('start'), end: fd.get('end'), days: fd.getAll('days').map(Number), perWeek: Number(fd.get('perWeek')) || 2, holiday: fd.get('holiday'), people: fd.getAll('pp'), details: fd.get('details') });
+            Object.assign(t, { title: fd.get('title'), type: fd.get('type'), mode: fd.get('mode'), start: fd.get('start'), end: fd.get('end'), days: fd.getAll('days').map(Number), perWeek: Number(fd.get('perWeek')) || 2, holiday: fd.get('holiday'), people: fd.getAll('pp'), details: fd.get('details'), noSite: !!fd.get('noSite') });
+            if (Engine.inGap(t.start, plan.settings)) { toast(`Start inside a working slot: ${App.slotsText()}.`); return; }
             if (t.mode === 'monthly' && !t.days.length) { toast('Tick at least one date.'); return; }
             closeModal(); App.commit(`Saved ${t.title}`, p => { const i = p.tasks.findIndex(x => x.id === t.id); if (i >= 0) p.tasks[i] = t; else p.tasks.push(t); });
           };
@@ -272,7 +304,8 @@
 
     editVisit(vkey) {
       const v = this.data.gen.visits.find(x => x.key === vkey); if (!v) return;
-      const days = this.data.gen.occs.filter(o => o.runKey === v.runKey && o.people.includes(v.person));
+      if (this.isPast(v.date)) { toast('This site day is over. Add a remark on the Today page.'); return; }
+      const days = this.data.gen.occs.filter(o => o.runKey === v.runKey && o.people.includes(v.person) && !this.isPast(o.date));
       modal({
         title: `${this.cname(v.company)}: site day`,
         body: `<p class="muted">${esc(this.pname(v.person))}, ${esc(this.task(v.taskId).title)}. Pick the day for this company.</p>
@@ -282,6 +315,9 @@
       });
     }
   };
+
+  const REMARK_LABELS = { done: 'Done', part: 'Partly done', not: 'Not done', moved: 'Postponed' };
+  App.REMARK_LABELS = REMARK_LABELS;
 
   function companyOptions(sel) {
     return Object.keys(GROUPS).map(gk => `<optgroup label="${GROUPS[gk]}">${Store.plan.companies.filter(c => c.group === gk).map(c => `<option value="${esc(c.id)}" ${sel === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</optgroup>`).join('');
@@ -306,6 +342,12 @@
         else App.moveOcc(d.key, date);
       });
     });
+    $$('[data-rs], [data-rt]', root).forEach(el => el.addEventListener('change', () => {
+      const k = el.dataset.rs || el.dataset.rt, f = el.dataset.rs ? 's' : 't';
+      App.keepScroll = true;
+      Store.change('Remark saved', p => { p.remarks = p.remarks || {}; const r = Object.assign({}, p.remarks[k] || {}); if (el.value) r[f] = el.value; else delete r[f]; if (Object.keys(r).length) p.remarks[k] = r; else delete p.remarks[k]; });
+      toast('Remark saved.');
+    }));
     $$('[data-add]', root).forEach(b => b.addEventListener('click', () => App.addExtra(b.dataset.add, b.dataset.person)));
     $$('[data-visit]', root).forEach(b => b.addEventListener('click', e => { e.stopPropagation(); App.editVisit(b.dataset.visit); }));
     $$('[data-task]', root).forEach(b => b.addEventListener('click', () => App.editTask(b.dataset.task)));

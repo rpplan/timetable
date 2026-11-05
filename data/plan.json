@@ -1,11 +1,21 @@
 {
- "version": 2,
+ "version": 3,
  "title": "Works timetable",
  "settings": {
   "start": "2026-11-05",
   "end": "2026-12-09",
-  "workStart": "10:00",
+  "workStart": "10:30",
   "workEnd": "19:00",
+  "slots": [
+   {
+    "start": "10:30",
+    "end": "13:30"
+   },
+   {
+    "start": "14:30",
+    "end": "19:00"
+   }
+  ],
   "lunchStart": "13:30",
   "lunchEnd": "14:30",
   "sundayOff": true,
@@ -37,7 +47,8 @@
    "fullName": "",
    "role": "Site measurement",
    "color": "#3b6fd4",
-   "aliases": []
+   "aliases": [],
+   "offDays": []
   },
   {
    "id": "R",
@@ -45,15 +56,17 @@
    "fullName": "",
    "role": "Site measurement",
    "color": "#d4573b",
-   "aliases": []
+   "aliases": [],
+   "offDays": []
   },
   {
    "id": "S",
    "name": "S",
    "fullName": "",
-   "role": "Site measurement, PPV works 2 days a week",
+   "role": "Site measurement, PPV works 2 days a week (office days, no site work)",
    "color": "#2e9466",
-   "aliases": []
+   "aliases": [],
+   "offDays": []
   },
   {
    "id": "P",
@@ -63,15 +76,20 @@
    "color": "#8a55c9",
    "aliases": [
     "P1"
-   ]
+   ],
+   "offDays": []
   },
   {
    "id": "B",
    "name": "B",
    "fullName": "",
-   "role": "Records, billing checks, payment recommendation, timetable",
+   "role": "Records, billing checks, payment recommendation, timetable. Works Monday to Friday.",
    "color": "#d29215",
-   "aliases": []
+   "aliases": [],
+   "offDays": [
+    6,
+    0
+   ]
   }
  ],
  "companies": [
@@ -243,7 +261,7 @@
     "vee-l-c",
     "pethe"
    ],
-   "duties": "PPV works of 2 days a week."
+   "duties": "PPV works of 2 days a week, on priority. On PPV days, office work only, no site measurement."
   },
   "P": {
    "main": [
@@ -257,13 +275,13 @@
     "jaiswal",
     "ppv-works"
    ],
-   "duties": "As P1: bill checking, rate list, formatting, advances, asset codes, Tally billing. Project estimation. PPV billing, GST filing."
+   "duties": "As P1: bill checking, rate list, formatting, advances, asset codes, Tally billing. Project estimation. PPV billing, GST filing. No site measurement on billing and advance days."
   },
   "B": {
    "main": [],
    "outstation": [],
    "other": [],
-   "duties": "Recording all asset names, status of estimation, advances, billing, cement calculation, credit balance sheet preparation, payment recommendation, checking of billing sheets after checking and preparation by P1. Maintain timetable and works. To be checked daily by B."
+   "duties": "Recording all asset names, status of estimation, advances, billing, cement calculation, credit balance sheet preparation, payment recommendation, checking of billing sheets after checking and preparation by P1. Maintain timetable and works. To be checked daily by B. Works Monday to Friday; Saturday and Sunday free."
   }
  },
  "tasks": [
@@ -279,7 +297,7 @@
     "P",
     "B"
    ],
-   "start": "10:00",
+   "start": "10:30",
    "end": "13:30",
    "companies": [
     "sunniva-sdl",
@@ -289,7 +307,8 @@
     "precon"
    ],
    "details": "Measurement checking, rate check, linking to PO file, advances filling, asset codes checking, emailing. Additionally discuss PRECON bills & works of D.",
-   "holiday": "shift"
+   "holiday": "shift",
+   "noSite": true
   },
   {
    "id": "ppvgst",
@@ -305,7 +324,7 @@
     "B"
    ],
    "start": "14:30",
-   "end": "18:30",
+   "end": "19:00",
    "companies": [
     "ppv-works"
    ],
@@ -328,8 +347,8 @@
     "R",
     "P"
    ],
-   "start": "10:00",
-   "end": "18:30",
+   "start": "10:30",
+   "end": "19:00",
    "siteGroup": "outstation",
    "maxDays": 4,
    "details": "Max 4 days including sheet preparation and cement calculations.",
@@ -355,8 +374,9 @@
    "companies": [
     "ppv-works"
    ],
-   "details": "PPV works, billing, estimation works, bank visits in the first half, valuation checking. Compulsory time allotment.",
-   "holiday": "skip"
+   "details": "PPV works, billing, estimation works, bank visits in the first half, valuation checking. Compulsory time allotment. S does no site measurement on these days.",
+   "holiday": "skip",
+   "noSite": true
   },
   {
    "id": "meet-sunniva-1",
@@ -595,7 +615,7 @@
     "P"
    ],
    "start": "10:30",
-   "end": "18:30",
+   "end": "19:00",
    "siteGroup": "main",
    "cycle": "C-1",
    "details": "Main contractors, with sheet preparation, cement calculation.",
@@ -614,8 +634,8 @@
     "P",
     "B"
    ],
-   "start": "10:00",
-   "end": "18:30",
+   "start": "10:30",
+   "end": "19:00",
    "companies": [
     "sunniva-sdl",
     "kipl-sdl",
@@ -624,7 +644,8 @@
     "precon"
    ],
    "details": "Bill checking, rate check, formatting, advances, asset codes, Tally billing by P1. B checks the billing sheets after P1.",
-   "holiday": "shift"
+   "holiday": "shift",
+   "noSite": true
   },
   {
    "id": "site-c2",
@@ -646,8 +667,8 @@
     "S",
     "P"
    ],
-   "start": "10:00",
-   "end": "18:30",
+   "start": "10:30",
+   "end": "19:00",
    "siteGroup": "other",
    "cycle": "C-2",
    "details": "For other contractors or main contractors.",
@@ -665,8 +686,8 @@
     "P",
     "B"
    ],
-   "start": "10:00",
-   "end": "18:30",
+   "start": "10:30",
+   "end": "19:00",
    "companies": [
     "sunniva-sdl",
     "kipl-sdl",
@@ -675,7 +696,8 @@
     "precon"
    ],
    "details": "Measurement checking, rate check, linking to PO file, advances filling, asset codes checking, emailing. Additionally discuss PRECON bills & works of D.",
-   "holiday": "shift"
+   "holiday": "shift",
+   "noSite": true
   },
   {
    "id": "bill2",
@@ -689,8 +711,8 @@
     "P",
     "B"
    ],
-   "start": "10:00",
-   "end": "18:30",
+   "start": "10:30",
+   "end": "19:00",
    "companies": [
     "sunniva-sdl",
     "kipl-sdl",
@@ -712,7 +734,8 @@
     "ppv-works"
    ],
    "details": "Bill checking, rate check, formatting, advances, asset codes, Tally billing by P1. B checks the billing sheets after P1. Includes other contractors.",
-   "holiday": "shift"
+   "holiday": "shift",
+   "noSite": true
   },
   {
    "id": "out2",
@@ -729,8 +752,8 @@
     "N",
     "R"
    ],
-   "start": "10:00",
-   "end": "18:30",
+   "start": "10:30",
+   "end": "19:00",
    "siteGroup": "outstation",
    "maxDays": 4,
    "details": "Max 4 days including sheet preparation and cement calculations.",
@@ -751,8 +774,8 @@
     "P",
     "B"
    ],
-   "start": "10:00",
-   "end": "18:30",
+   "start": "10:30",
+   "end": "19:00",
    "details": "Compulsory time allotment.",
    "holiday": "skip"
   },
@@ -772,7 +795,7 @@
     "B"
    ],
    "start": "09:15",
-   "end": "10:00",
+   "end": "10:30",
    "companies": [
     "sunniva-sdl"
    ],
@@ -781,7 +804,7 @@
    "agenda": [
     {
      "item": "Sunniva: work list for part bills",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "N",
       "R"
@@ -789,7 +812,7 @@
     },
     {
      "item": "Sunniva: final bill lists",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "P",
       "B"
@@ -797,7 +820,7 @@
     },
     {
      "item": "Shortlisting of works for billing",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "P",
       "B"
@@ -805,14 +828,14 @@
     },
     {
      "item": "Shortlisting of works for advances",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "B"
      ]
     },
     {
      "item": "Discussion and action points",
-     "minutes": 5,
+     "minutes": 15,
      "owners": [
       "N",
       "R",
@@ -839,7 +862,7 @@
     "B"
    ],
    "start": "09:15",
-   "end": "10:00",
+   "end": "10:30",
    "companies": [
     "kipl-sdl",
     "kipl-sol",
@@ -850,7 +873,7 @@
    "agenda": [
     {
      "item": "KIPL: work list for part bills",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "N",
       "R"
@@ -858,7 +881,7 @@
     },
     {
      "item": "KIPL: final bill lists",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "P",
       "B"
@@ -866,7 +889,7 @@
     },
     {
      "item": "Shortlisting of works for billing",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "P",
       "B"
@@ -874,14 +897,14 @@
     },
     {
      "item": "Shortlisting of works for advances",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "B"
      ]
     },
     {
      "item": "Discussion and action points",
-     "minutes": 5,
+     "minutes": 15,
      "owners": [
       "N",
       "R",
@@ -908,7 +931,7 @@
     "B"
    ],
    "start": "09:15",
-   "end": "10:00",
+   "end": "10:30",
    "companies": [
     "mahto-sol",
     "classic-1",
@@ -930,7 +953,7 @@
    "agenda": [
     {
      "item": "Mahto & other contractors: work list for part bills",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "N",
       "R"
@@ -938,7 +961,7 @@
     },
     {
      "item": "Mahto & other contractors: final bill lists",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "P",
       "B"
@@ -946,7 +969,7 @@
     },
     {
      "item": "Shortlisting of works for billing",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "P",
       "B"
@@ -954,14 +977,14 @@
     },
     {
      "item": "Shortlisting of works for advances",
-     "minutes": 10,
+     "minutes": 15,
      "owners": [
       "B"
      ]
     },
     {
      "item": "Discussion and action points",
-     "minutes": 5,
+     "minutes": 15,
      "owners": [
       "N",
       "R",
@@ -992,8 +1015,8 @@
     "S",
     "P"
    ],
-   "start": "10:00",
-   "end": "18:30",
+   "start": "10:30",
+   "end": "19:00",
    "siteGroup": "main",
    "cycle": "C-3",
    "details": "Main contractors with sheet preparation, cement calculation.",
@@ -1009,7 +1032,7 @@
    ],
    "start": "18:30",
    "end": "19:00",
-   "details": "B checks the day's work of everyone and maintains the timetable."
+   "details": "B checks the day's work of everyone and maintains the timetable. Monday to Friday."
   },
   {
    "id": "ppv-s",
@@ -1020,32 +1043,38 @@
    "people": [
     "S"
    ],
-   "start": "10:00",
-   "end": "18:30",
+   "start": "10:30",
+   "end": "19:00",
    "companies": [
     "ppv-works"
    ],
-   "details": "PPV works of 2 days a week, placed on S's free working days."
+   "noSite": true,
+   "details": "PPV works of 2 days a week, assigned to S on priority. Office work: S can do other office work on these days but no site measurement."
   }
  ],
  "notes": [
   "P & P1 are the same person.",
-  "Working time 10 to 7, lunch 1.30 to 2.30.",
+  "Meetings 9.15 to 10.30. Working time 10.30 to 7 in two slots: 10.30 to 1.30 and 2.30 to 7.",
   "Timetable from 5th Nov to 9th Dec.",
   "Diwali holidays 8, 9, 10, 11 November.",
   "Sundays holidays but may be adjusted for work streak.",
+  "B works Monday to Friday; Saturday and Sunday free.",
+  "P/P1 does no site measurement on billing and advance days.",
+  "S does no site measurement on PPV, billing, estimation, bank visit and valuation days.",
   "Person-wise timetable with time allotment per day, per week, per month.",
   "Company-wise chart: each company gets separate days for work on site.",
   "Meeting timetable with agenda and minutes for each agenda item.",
   "Timetable for each advance payment day for P1 & B.",
   "Timetable for each billing day for P1 & B.",
   "Daily quick review agenda for B to check everyone's work.",
-  "Anyone out of station does not join the meeting."
+  "Anyone out of station does not join the meeting.",
+  "Past days are read only, with remarks on what was done."
  ],
  "away": {},
  "overrides": {},
  "visitOverrides": {},
  "status": {},
  "reviews": {},
+ "remarks": {},
  "extra": []
 }

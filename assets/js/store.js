@@ -1,7 +1,8 @@
 /* Plan storage: browser save, undo/redo, office copy (data/plan.json), share links. */
 (function (g) {
   'use strict';
-  const KEY = 'works-timetable-plan-v2';   // v2: new company list from the updated sheet
+  const KEY = 'works-timetable-plan-v3';   // v3: two working slots, B off on weekends, office-only days
+  const OLD_KEY = 'works-timetable-plan-v2';
   const PREF = 'works-timetable-prefs-v2';
   const clone = o => JSON.parse(JSON.stringify(o));
 
@@ -33,7 +34,7 @@
       }
       // 3. this browser's saved copy
       let saved = null;
-      try { saved = localStorage.getItem(KEY); } catch (e) { /* ignore */ }
+      try { saved = localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY); } catch (e) { /* ignore */ }
       if (saved) { try { this.plan = migrate(JSON.parse(saved)); } catch (e) { this.plan = null; } }
       if (!this.plan) this.plan = clone(base);
     },
@@ -82,7 +83,7 @@
   function migrate(p) {
     const d = g.DEFAULT_PLAN;
     p = p || {};
-    ['overrides', 'visitOverrides', 'status', 'reviews', 'away'].forEach(k => { if (!p[k] || typeof p[k] !== 'object') p[k] = {}; });
+    ['overrides', 'visitOverrides', 'status', 'reviews', 'away', 'remarks'].forEach(k => { if (!p[k] || typeof p[k] !== 'object') p[k] = {}; });
     if (!Array.isArray(p.extra)) p.extra = [];
     if (!Array.isArray(p.holidays)) p.holidays = clone(d.holidays);
     if (!Array.isArray(p.people)) p.people = clone(d.people);
@@ -93,8 +94,28 @@
     p.settings = Object.assign({}, d.settings, p.settings || {});
     if (!p.notes) p.notes = clone(d.notes);
     p.tasks.forEach(t => (t.agenda || []).forEach(a => { if (!Array.isArray(a.owners)) a.owners = a.owner ? [a.owner] : []; delete a.owner; }));
-    p.version = 2;
+    if ((p.version || 1) < 3) upgradeTo3(p, d);
+    p.people.forEach(x => { if (!Array.isArray(x.offDays)) x.offDays = []; });
+    if (!Array.isArray(p.settings.slots) || !p.settings.slots.length) p.settings.slots = clone(d.settings.slots);
+    p.version = 3;
     return p;
+  }
+
+  /* Older plans: new meeting and slot times, B's weekend, office-only days. The person's own edits are kept. */
+  function upgradeTo3(p, d) {
+    const mins = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
+    Object.assign(p.settings, { workStart: d.settings.workStart, workEnd: d.settings.workEnd, slots: clone(d.settings.slots), lunchStart: d.settings.lunchStart, lunchEnd: d.settings.lunchEnd });
+    p.tasks.forEach(t => {
+      const n = d.tasks.find(x => x.id === t.id); if (!n) return;
+      const oldSlot = mins(t.end) - mins(t.start);
+      const used = (t.agenda || []).reduce((s, a) => s + (Number(a.minutes) || 0), 0);
+      t.start = n.start; t.end = n.end;
+      if (n.noSite) t.noSite = true;
+      if (n.agenda && used === oldSlot && used !== mins(n.end) - mins(n.start)) t.agenda = clone(n.agenda);
+      t.details = n.details;
+    });
+    const b = p.people.find(x => x.id === 'B'); if (b && !Array.isArray(b.offDays)) b.offDays = [6, 0];
+    Object.keys(p.overrides || {}).forEach(k => { const o = p.overrides[k]; if (o && !o.deleted) { delete o.start; delete o.end; } });
   }
 
   /* Share links: the whole plan, deflated and base64url-encoded into the URL. */
