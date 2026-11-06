@@ -37,7 +37,21 @@
       try { saved = localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY); } catch (e) { /* ignore */ }
       if (saved) { try { this.plan = migrate(JSON.parse(saved)); } catch (e) { this.plan = null; } }
       if (!this.plan) this.plan = clone(base);
+      this.cleanUp();
     },
+
+    /* Daily clean-up: N, R, S, P/P1 records older than the retention period (45 days) are deleted. B's are kept. */
+    cleanUp() {
+      const n = purge(this.plan, todayStr());
+      if (n) { this.save(true); this.purged = n; }
+      return n;
+    },
+    /* B deletes his own records (only when he chooses to) */
+    deleteB(before, kinds) {
+      return this.change('Deleted B\'s records before ' + before, p => deleteBRecords(p, before, kinds));
+    },
+    /* Copy without B's private admin schedule, for plan.json and share links */
+    publicCopy() { const pl = clone(this.plan); pl.admin = {}; delete pl.savedAt; return pl; },
 
     savePrefs() { try { localStorage.setItem(PREF, JSON.stringify(this.prefs)); } catch (e) { /* ignore */ } },
 
@@ -76,14 +90,14 @@
     },
     on(fn) { this.listeners.push(fn); },
     emit() { this.listeners.forEach(fn => fn()); },
-    shareLink: async function () { return location.origin + location.pathname + '#share=' + await encodeShare(this.plan); },
+    shareLink: async function () { return location.origin + location.pathname + '#share=' + await encodeShare(this.publicCopy()); },
     clone
   };
 
   function migrate(p) {
     const d = g.DEFAULT_PLAN;
     p = p || {};
-    ['overrides', 'visitOverrides', 'status', 'reviews', 'away', 'remarks'].forEach(k => { if (!p[k] || typeof p[k] !== 'object') p[k] = {}; });
+    ['overrides', 'visitOverrides', 'status', 'reviews', 'away', 'remarks', 'importance', 'clear', 'leave', 'targets', 'followups', 'admin'].forEach(k => { if (!p[k] || typeof p[k] !== 'object') p[k] = {}; });
     if (!Array.isArray(p.extra)) p.extra = [];
     if (!Array.isArray(p.holidays)) p.holidays = clone(d.holidays);
     if (!Array.isArray(p.people)) p.people = clone(d.people);
@@ -95,10 +109,54 @@
     if (!p.notes) p.notes = clone(d.notes);
     p.tasks.forEach(t => (t.agenda || []).forEach(a => { if (!Array.isArray(a.owners)) a.owners = a.owner ? [a.owner] : []; delete a.owner; }));
     if ((p.version || 1) < 3) upgradeTo3(p, d);
+    if ((p.version || 1) < 4) p.tasks.forEach(t => { const n = d.tasks.find(x => x.id === t.id); if (n && n.maxDays && !t.maxDays) t.maxDays = n.maxDays; });
+    if ((p.version || 1) < 5) { const c2 = p.tasks.find(x => x.id === 'site-c2'); if (c2) c2.fillDays = true; }
+    if (!Array.isArray(p.settings.adminHours)) p.settings.adminHours = clone(d.settings.adminHours);
     p.people.forEach(x => { if (!Array.isArray(x.offDays)) x.offDays = []; });
     if (!Array.isArray(p.settings.slots) || !p.settings.slots.length) p.settings.slots = clone(d.settings.slots);
-    p.version = 3;
+    p.version = 5;
     return p;
+  }
+
+  function todayStr() { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; }
+  function addDays(s, n) { const [y, m, dd] = s.split('-').map(Number); const x = new Date(Date.UTC(y, m - 1, dd + n)); return x.toISOString().slice(0, 10); }
+  const B = 'B';
+  function dateOfKey(k, extraDate) { const m = k.match(/\d{4}-\d{2}-\d{2}/); if (m) return m[0]; const x = k.match(/^x:[^|~]+/); return x ? extraDate[x[0]] : null; }
+
+  function purge(p, today) {
+    const keep = Number(p.settings.retentionDays) || 0; if (!keep) return 0;
+    const cut = addDays(today, -keep);
+    const extraDate = {}; p.extra.forEach(x => { extraDate['x:' + x.id] = x.date; });
+    let n = 0;
+    ['remarks', 'clear', 'importance'].forEach(st => Object.keys(p[st]).forEach(k => {
+      const pid = k.slice(k.lastIndexOf('|') + 1), d = dateOfKey(k, extraDate);
+      if (pid !== B && d && d < cut) { delete p[st][k]; n++; }
+    }));
+    Object.keys(p.leave).forEach(k => { const [pid, d] = k.split('|'); if (pid !== B && d < cut) { delete p.leave[k]; n++; } });
+    ['overrides', 'status'].forEach(st => Object.keys(p[st]).forEach(k => {
+      if (k.startsWith('x:')) return;
+      const d = dateOfKey(k, extraDate); if (!d || d >= cut) return;
+      const t = p.tasks.find(x => x.id === k.split('@')[0]);
+      const ppl = (p.overrides[k] && p.overrides[k].people) || (t ? t.people : []);
+      if (!ppl.includes(B)) { delete p[st][k]; n++; }
+    }));
+    p.extra = p.extra.filter(x => { if (x.date < cut && !(x.people || []).includes(B)) { n++; return false; } return true; });
+    return n;
+  }
+
+  function deleteBRecords(p, before, kinds) {
+    const k = new Set(kinds || []);
+    const extraDate = {}; p.extra.forEach(x => { extraDate['x:' + x.id] = x.date; });
+    const old = key => { const d = dateOfKey(key, extraDate); return d && d < before; };
+    if (k.has('timetable')) {
+      ['remarks', 'clear', 'importance'].forEach(st => Object.keys(p[st]).forEach(key => { if (key.endsWith('|' + B) && old(key)) delete p[st][key]; }));
+      p.extra = p.extra.filter(x => !(x.date < before && (x.people || []).length === 1 && x.people[0] === B));
+    }
+    if (k.has('checks')) { const days = (p.reviews.days || {}); Object.keys(days).forEach(d => { if (d < before) delete days[d]; }); }
+    if (k.has('pay')) { const pay = (p.reviews.pay || {}); Object.keys(pay).forEach(key => { if (old(key)) delete pay[key]; }); }
+    if (k.has('targets')) Object.keys(p.targets).forEach(key => { if ((p.targets[key].d || '') < before) delete p.targets[key]; });
+    if (k.has('followups')) Object.keys(p.followups).forEach(key => { if (old(key)) delete p.followups[key]; });
+    if (k.has('admin')) Object.keys(p.admin).forEach(d => { if (d < before) delete p.admin[d]; });
   }
 
   /* Older plans: new meeting and slot times, B's weekend, office-only days. The person's own edits are kept. */
@@ -141,6 +199,6 @@
   function b64(u8) { let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
   function unb64(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const b = atob(s); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
 
-  Store.migrate = migrate;
+  Store.migrate = migrate; Store.purge = purge; Store.deleteBRecords = deleteBRecords;
   g.Store = Store;
 })(window);

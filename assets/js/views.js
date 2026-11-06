@@ -21,12 +21,14 @@
   /* A person's day. Upcoming days: grouped by Slot 1 / Slot 2. Past days: grey, read only, one remark per work. */
   function dayList(date, pid, opts) {
     const rows = App.dayRows(date, pid);
+    if (expired(date, pid)) return `<p class="free">Record deleted (older than ${Store.plan.settings.retentionDays} days)</p>`;
+    if (App.onLeave(pid, date)) return `<p class="free leave-note">On leave. The work of this day is moved to the next working day.</p>`;
     if (App.isPast(date)) return pastList(date, pid, rows, opts);
     if (!rows.length) return `<p class="free">${opts && opts.free ? opts.free : 'Nothing planned'}</p>`;
     const slots = App.data.gen.slots, items = rows.slice();
     slots.forEach((sl, i) => items.push({ head: i, a: sl[0] - 0.5 }));
     items.sort((x, y) => x.a - y.a);
-    const out = [];
+    const out = [], seen = new Set();
     items.forEach((r, k) => {
       if (r.head != null) {
         out.push(`<li class="slot-h">${esc(App.slotLabel(r.head))}</li>`);
@@ -36,8 +38,10 @@
       }
       const ty = App.TYPES[r.o.type] || App.TYPES.office;
       const clash = App.data.clashKeys.has(r.o.key) && App.data.clashPD.has(pid + '|' + date);
-      out.push(`<li class="${clash ? 'clash' : ''} ${r.noTime ? 'notime' : ''}" style="--c:${ty.color}">
-          <span class="tm">${r.noTime ? 'No free slot' : `${T.s(r.a)}–${T.s(r.b)}`}</span><button type="button" class="link" data-occ="${esc(r.o.key)}" draggable="true" data-from="${esc(pid)}">${esc(App.personLabel(r.o, pid))}</button>${r.o.status === 'done' ? '<span class="ok">Done</span>' : ''}</li>`);
+      const firstRow = !seen.has(r.o.key); seen.add(r.o.key);
+      const extras = firstRow && r.o.type !== 'review' ? `${App.impControl(r.o.key, pid)}${r.o.type !== 'meeting' ? App.clearBox(r.o.key, pid, date) : ''}` : '';
+      out.push(`<li class="${clash ? 'clash' : ''} ${r.noTime ? 'notime' : ''} ${r.o.carried ? 'carried' : ''}" style="--c:${ty.color}">
+          <span class="tm">${r.noTime ? 'No free slot' : `${T.s(r.a)}–${T.s(r.b)}`}</span><button type="button" class="link" data-occ="${esc(r.o.key)}" draggable="true" data-from="${esc(pid)}">${esc(App.personLabel(r.o, pid))}${r.o.carried ? ` <small class="muted">(from leave ${D.nice(r.o.carriedFrom, { short: true })})</small>` : ''}</button>${r.o.status === 'done' ? '<span class="ok">Done</span>' : ''}${extras ? `<span class="row-x">${extras}</span>` : ''}</li>`);
     });
     return `<ul class="day">${out.join('')}</ul>`;
   }
@@ -46,10 +50,19 @@
     return `<div class="rmk"><select data-rs="${esc(k)}" aria-label="Status"><option value="">Status…</option>${Object.keys(App.REMARK_LABELS).map(x => `<option value="${x}" ${r.s === x ? 'selected' : ''}>${App.REMARK_LABELS[x]}</option>`).join('')}</select>
       <input data-rt="${esc(k)}" value="${esc(r.t || '')}" placeholder="Remarks: what was done"></div>`;
   }
+  function expired(date, pid) {
+    const keep = Number(Store.plan.settings.retentionDays) || 0;
+    return keep && !App.isB(pid) && date < D.add(D.today(), -keep);
+  }
+  function printBtn(what, label) { return `<button type="button" class="btn ghost noprint" data-print="${what}">${icon('print')}${label || 'Print / save PDF'}</button>`; }
+  function pointsStrip() {
+    const plan = Store.plan;
+    return `<div class="points">${plan.people.filter(x => !App.isB(x.id)).map(x => `<a href="#/people?id=${encodeURIComponent(x.id)}" class="pt-chip" style="--pc:${x.color}">${App.avatar(x.id, 'sm')}<b>${App.points(x.id)}</b><span>points</span></a>`).join('')}</div>`;
+  }
   function pastList(date, pid, rows, opts) {
     const seen = new Set(), entries = [];
     rows.forEach(r => { if (!seen.has(r.o.key)) { seen.add(r.o.key); entries.push(r.e); } });
-    const items = entries.map(e => `<li class="past ${(Store.plan.remarks[e.key + '|' + pid] || {}).s || ''}"><span class="tm">${e.noTime ? 'No free slot' : esc(Engine.partsText(e.parts))}</span><span class="pt-l">${esc(App.personLabel(e.o, pid))}</span>${remarkControls(e.key + '|' + pid)}</li>`).join('');
+    const items = entries.map(e => `<li class="past ${(Store.plan.remarks[e.key + '|' + pid] || {}).s || ''}"><span class="tm">${e.noTime ? 'No free slot' : esc(Engine.partsText(e.parts))}</span><span class="pt-l">${esc(App.personLabel(e.o, pid))}</span>${e.o.type !== 'review' ? `<span class="row-x">${App.impControl(e.key, pid)}${e.o.type !== 'meeting' ? App.clearBox(e.key, pid, date) : ''}</span>` : ''}${remarkControls(e.key + '|' + pid)}</li>`).join('');
     const dayK = `day@${date}|${pid}`;
     if (!entries.length && opts && opts.noDayRemark) return `<p class="free">${opts && opts.free ? opts.free : 'Nothing planned'}</p>`;
     return `<ul class="day pastday">${items || `<li class="past"><span class="free">${opts && opts.free ? opts.free : 'Nothing planned'}</span></li>`}
@@ -67,10 +80,14 @@
       const cards = plan.people.map(person => {
         const w = App.whereLabel(date, person.id);
         const off = !hol && Engine.personOff(plan, person.id, date) && !(data.gen.sched[person.id + '|' + date] || []).length;
+        const leave = App.onLeave(person.id, date), canLeave = !App.isB(person.id) && !past && !hol && !off && !(D.dow(date) === 0 && !(data.gen.sched[person.id + '|' + date] || []).length);
+        const tg = date === D.today() && !App.isB(person.id) ? App.openTargets(person.id) : [];
         return `<article class="card person ${past ? 'past' : ''}" style="--pc:${person.color}" ${past ? '' : `data-drop="${date}" data-person="${esc(person.id)}"`}>
           <header>${App.avatar(person.id, 'lg')}<div><a href="#/people?id=${encodeURIComponent(person.id)}" class="name">${esc(person.name)}</a><span class="where w-${w.k}">${esc(w.text)}</span></div></header>
           ${hol ? '<p class="free">Holiday</p>' : off && !past ? '<p class="free">Weekly day off (personal work)</p>' : dayList(date, person.id, { free: off ? 'Weekly day off' : 'Free all day' })}
-          ${!hol && !past ? `<button type="button" class="add-small" data-add="${date}" data-person="${esc(person.id)}">${icon('plus')}Add</button>` : ''}</article>`;
+          ${tg.length ? `<div class="tgts"><h3>Site measurement target</h3>${tg.map(v => App.targetRow(v)).join('')}</div>` : ''}
+          <div class="card-foot noprint">${!hol && !past && !leave ? `<button type="button" class="add-small" data-add="${date}" data-person="${esc(person.id)}">${icon('plus')}Add</button>` : ''}
+          ${canLeave ? `<button type="button" class="add-small leave-btn ${leave ? 'on' : ''}" data-leave="${esc(person.id)}|${date}|${leave ? '0' : '1'}">${leave ? 'Cancel leave' : 'On leave'}</button>` : ''}</div></article>`;
       }).join('');
       const meet = meetings.map(m => {
         const t = App.task(m.taskId) || {}; let cur = T.m(m.start);
@@ -80,8 +97,9 @@
       return `<section>
         <header class="head">
           <div class="date-big"><b>${dt.getUTCDate()}</b><span>${D.DAYS[dt.getUTCDay()]}<br>${D.MONTHS[dt.getUTCMonth()]} ${dt.getUTCFullYear()}</span></div>
-          ${dayNav('today', date)}
+          <div class="acts">${dayNav('today', date)}${printBtn('day')}</div>
         </header>
+        ${pointsStrip()}
         ${hol ? `<p class="banner">Holiday: ${esc(hol)}</p>` : ''}
         ${past ? `<p class="banner past-b">This day is over. The timetable is read only; write the status and remarks of each work below.</p>` : ''}
         ${clashes.length ? `<p class="banner warn">${clashes.length === 1 ? 'One person is' : clashes.length + ' bookings are'} double-booked today. ${clashes.map(c => esc(c.text)).join(' ')}</p>` : ''}
@@ -104,7 +122,7 @@
         else if (o.type !== 'meeting') items.push({ id: `${person.id}|${o.key}`, pid: person.id, text: `${o.title} done` });
       });
     });
-    ['Asset names recorded', 'Status of estimation, advances, billing updated', 'Credit balance sheet updated', 'Payment recommendations sent', 'Timetable updated for tomorrow']
+    ['Asset names recorded', 'Status of estimation, advances, billing updated', 'Credit balance sheet updated', 'Payment recommendations sent', 'Timetable updated for tomorrow', 'Clearance forms of N, R, S, P/P1 checked']
       .forEach((t, i) => items.push({ id: `B|own|${i}`, pid: 'B', text: t }));
     return items;
   }
@@ -136,10 +154,10 @@
         const inWin = d >= st.start && d <= st.end, past = App.isPast(d);
         const list = inWin ? (data.gen.sched[person.id + '|' + d] || []).filter(e => e.o.type !== 'review').map(e => e.o) : [];
         const off = inWin && !list.length && Engine.personOff(plan, person.id, d) && !data.gen.hol[d];
-        return `<td class="${data.gen.hol[d] ? 'hol' : ''} ${inWin ? '' : 'out'} ${past ? 'past' : ''} ${data.clashPD.has(person.id + '|' + d) ? 'clash' : ''}" ${inWin && !past ? `data-drop="${d}" data-person="${esc(person.id)}"` : ''}>${off ? '<span class="offday">Day off</span>' : ''}${list.map(o => App.pill(o, person.id)).join('')}</td>`;
+        return `<td class="${data.gen.hol[d] ? 'hol' : ''} ${inWin ? '' : 'out'} ${past ? 'past' : ''} ${data.clashPD.has(person.id + '|' + d) ? 'clash' : ''}" ${inWin && !past ? `data-drop="${d}" data-person="${esc(person.id)}"` : ''}>${off ? '<span class="offday">Day off</span>' : ''}${inWin && App.onLeave(person.id, d) ? '<span class="offday leave">On leave</span>' : ''}${list.map(o => App.pill(o, person.id)).join('')}</td>`;
       }).join('')}</tr>`).join('');
       return `<section>
-        <header class="head"><h1>Week of ${D.nice(ws, { short: true })}</h1>
+        <header class="head"><h1>Week of ${D.nice(ws, { short: true })}</h1>${printBtn('week')}
           <div class="nav-date"><button type="button" class="round" ${D.add(ws, 6) < st.start ? '' : ''} ${prev < D.weekStart(st.start) ? 'disabled' : ''} data-gov="week?w=${prev}" aria-label="Previous week">${icon('left')}</button>
           <button type="button" class="btn ghost" data-gov="week?w=${D.weekStart(App.defaultDate())}">This week</button>
           <button type="button" class="round" ${next > st.end ? 'disabled' : ''} data-gov="week?w=${next}" aria-label="Next week">${icon('right')}</button></div></header>
@@ -166,8 +184,8 @@
       return `<section style="--pc:${person.color}">
         <nav class="tabs">${plan.people.map(x => `<a href="#/people?id=${encodeURIComponent(x.id)}" class="${x.id === person.id ? 'on' : ''}" style="--pc:${x.color}">${App.avatar(x.id, 'sm')}${esc(x.name)}</a>`).join('')}</nav>
         <header class="head"><div><h1>${esc(person.name)}</h1><p class="muted">${esc(person.role || '')}</p></div>
-          <div class="acts"><button type="button" class="btn ghost" id="ics">${icon('calendar')}Add to phone calendar</button><button type="button" class="btn ghost" onclick="window.print()">${icon('print')}Print</button></div></header>
-        <div class="stats"><div><b>${T.hrs(s.booked)}</b><span>hours in this timetable</span></div><div><b>${s.daysWorked}</b><span>days with work</span></div><div><b>${s.visits}</b><span>company site days</span></div></div>
+          <div class="acts"><button type="button" class="btn ghost" id="ics">${icon('calendar')}Add to phone calendar</button>${printBtn('person')}</div></header>
+        <div class="stats"><div><b>${T.hrs(s.booked)}</b><span>hours in this timetable</span></div><div><b>${s.daysWorked}</b><span>days with work</span></div><div><b>${s.visits}</b><span>company site days</span></div>${App.isB(person.id) ? '' : `<div><b>${App.points(person.id)}</b><span>points (site work done in time)</span></div>`}</div>
         <div class="grid2">
           <article class="card"><h2>Hours</h2><table class="tbl"><thead><tr><th>Week</th><th>Hours</th></tr></thead><tbody>
             ${weeks.map(w => `<tr><td>${D.nice(w, { short: true })} – ${D.nice(D.add(w, 6), { short: true })}</td><td>${T.hrs(sumBy(d => D.weekStart(d) === w))}</td></tr>`).join('')}</tbody>
@@ -176,6 +194,7 @@
           <article class="card"><h2>Companies</h2><dl class="dl"><dt>Main contractors</dt><dd>${comps('main')}</dd><dt>Outstation sites</dt><dd>${comps('outstation')}</dd><dt>Other contractors</dt><dd>${comps('other')}</dd>${r.duties ? `<dt>Other duties</dt><dd>${esc(r.duties)}</dd>` : ''}</dl>
             ${trips.length ? `<h2 class="mt">Outstation trips</h2><ul class="trips">${trips.map(tr => `<li><label class="switch"><input type="checkbox" data-trip="${esc(tr.runKey)}" ${tr.going ? 'checked' : ''}><span></span></label><div><b>${D.nice(tr.days[0], { short: true })} – ${D.nice(tr.days[tr.days.length - 1], { short: true })}</b><small>${tr.going ? 'Going outstation. Skips meetings on these days.' : 'Staying in town.'}</small></div></li>`).join('')}</ul>` : ''}</article>
         </div>
+        ${App.isB(person.id) ? '' : targetsCard(person.id)}
         <article class="card"><h2>Day by day</h2><div class="days-list">${data.gen.dates.map(d => {
           const hol = data.gen.hol[d]; const rows = App.dayRows(d, person.id);
           const off = Engine.personOff(plan, person.id, d);
@@ -197,6 +216,15 @@
     }
   };
 
+  function targetsCard(pid) {
+    const vs = App.data.gen.visits.filter(v => v.person === pid && !v.repeat).sort((a, b) => a.date < b.date ? -1 : 1);
+    if (!vs.length) return '';
+    const st = Store.plan.settings;
+    return `<article class="card"><h2>Site measurement targets <span class="count">${App.points(pid)} points</span></h2>
+      <p class="muted small">Each site measurement must be done within ${st.targetDays || 7} days from the start of the run. Tick it when done in time; the tick box is there for ${st.targetDays || 7} days and then disappears. One tick = ${st.targetPoints || 100} points.</p>
+      <div class="tgt-list">${vs.map(v => `<div class="tgt-row"><span class="dd"><b>${D.day(v.date)}</b>${D.MONTHS[D.parse(v.date).getUTCMonth()].slice(0, 3)}</span>${App.targetRow(v)}</div>`).join('')}</div></article>`;
+  }
+
   /* ---------------- Companies ---------------- */
   V.companies = {
     title: 'Companies',
@@ -204,11 +232,11 @@
       const plan = Store.plan, data = App.data;
       const owners = c => plan.people.filter(x => ((plan.responsibilities[x.id] || {})[c.group] || []).includes(c.id));
       return `<section><header class="head"><h1>Companies</h1></header>
-        <p class="hint">Every company has its own site days. Click a date to change it.</p>
+        <p class="hint">Every company has its own site days. Click a date to change it, or a company name for its monthly schedule with importance and 6 pm follow-up points.</p>
         ${Object.keys(App.GROUPS).map(gk => `<h2 class="group">${App.GROUPS[gk]}</h2><div class="comp-grid">${plan.companies.filter(c => c.group === gk).map(c => {
           const vs = data.gen.visits.filter(v => v.company === c.id).sort((a, b) => a.date < b.date ? -1 : 1);
           const ow = owners(c);
-          return `<article class="card comp"><h3>${esc(c.name)}</h3><p class="muted small">${ow.length ? ow.map(x => esc(x.name)).join(' and ') : 'Nobody assigned'}${c.together && ow.length > 1 ? ', together on the same day' : ow.length > 1 ? ', on separate days' : ''}</p>
+          return `<article class="card comp"><h3><a href="#/company?id=${encodeURIComponent(c.id)}">${esc(c.name)}</a></h3><p class="muted small">${ow.length ? ow.map(x => esc(x.name)).join(' and ') : 'Nobody assigned'}${c.together && ow.length > 1 ? ', together on the same day' : ow.length > 1 ? ', on separate days' : ''}</p>
             <div class="chips">${vs.map(v => App.isPast(v.date) ? `<span class="dchip past" style="--pc:${App.pcolor(v.person)}">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</span>` : `<button type="button" class="dchip" data-visit="${esc(v.key)}" style="--pc:${App.pcolor(v.person)}">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</button>`).join('') || '<span class="muted small">No site day in this timetable</span>'}</div></article>`;
         }).join('')}</div>`).join('')}</section>`;
     }
@@ -363,10 +391,11 @@
     const plan = Store.plan, data = App.compute(), st = plan.settings;
     const nm = id => App.pname(id), cn = id => App.cname(id), ty = t => (App.TYPES[t] || {}).label || t;
     const RL = App.REMARK_LABELS, rmk = k => plan.remarks[k] || {};
-    const pw = [['Person', 'Date', 'Day', 'Week of', 'Month', 'Slot', 'Start', 'End', 'Hours', 'Work', 'Kind', 'Status', 'Remarks']];
+    const IL = k => (App.IMP[k] || {}).label || '';
+    const pw = [['Person', 'Date', 'Day', 'Week of', 'Month', 'Slot', 'Start', 'End', 'Hours', 'Work', 'Kind', 'Importance', 'Clearance form', 'Status', 'Remarks']];
     data.gen.dates.forEach(d => plan.people.forEach(p => App.dayRows(d, p.id).forEach(r => {
       const rr = rmk(r.o.key + '|' + p.id);
-      pw.push([nm(p.id), d, D.DAYS[D.dow(d)], D.weekStart(d), D.month(d), r.noTime ? 'No free slot' : r.slot >= 0 ? `Slot ${r.slot + 1}` : 'Meeting / other', r.noTime ? '' : T.s(r.a), r.noTime ? '' : T.s(r.b), r.noTime ? 0 : +((r.b - r.a) / 60).toFixed(2), App.personLabel(r.o, p.id), ty(r.o.type), RL[rr.s] || '', rr.t || '']);
+      pw.push([nm(p.id), d, D.DAYS[D.dow(d)], D.weekStart(d), D.month(d), r.noTime ? 'No free slot' : r.slot >= 0 ? `Slot ${r.slot + 1}` : 'Meeting / other', r.noTime ? '' : T.s(r.a), r.noTime ? '' : T.s(r.b), r.noTime ? 0 : +((r.b - r.a) / 60).toFixed(2), App.personLabel(r.o, p.id), ty(r.o.type), IL(App.imp(r.o.key, p.id)), App.isB(p.id) ? '' : (plan.clear[r.o.key + '|' + p.id] ? 'Done' : ''), RL[rr.s] || '', rr.t || '']);
     })));
     const rem = [['Date', 'Person', 'Work', 'Status', 'Remarks']];
     Object.keys(plan.remarks).sort().forEach(k => { const i = k.lastIndexOf('|'), key = k.slice(0, i), pid = k.slice(i + 1), r = plan.remarks[k];
@@ -387,7 +416,14 @@
     data.gen.occs.filter(o => o.type === 'advance' || o.type === 'billing').forEach(o => Engine.slotPlan(plan, o, STEPS[o.type], data.gen).forEach(r => pay.push([o.date, o.title, r.start, r.end, r.company === 'general' ? 'All works' : cn(r.company), STEPS[o.type].join(', '), o.people.map(nm).join(', ')])));
     const sched = [['Date', 'Day', 'Start', 'End', 'Hours', 'Work', 'Kind', 'People', 'Out of station']];
     data.gen.occs.forEach(o => sched.push([o.date, D.DAYS[D.dow(o.date)], o.start, o.end, +(o.mins / 60).toFixed(2), o.title, ty(o.type), o.people.map(nm).join(', '), (o.away || []).map(nm).join(', ')]));
-    IO.download(IO.xlsx([{ name: 'Person-wise', rows: pw }, { name: 'Hours', rows: hrs }, { name: 'Day grid', rows: daily }, { name: 'Company-wise', rows: comp }, { name: 'Meetings', rows: meet }, { name: 'Advance & billing', rows: pay }, { name: 'All work', rows: sched }, { name: 'Remarks', rows: rem }]), `timetable-${st.start}-to-${st.end}.xlsx`);
+    const pts = [['Person', 'Company', 'Run', 'Ticked on', 'Due', 'Points']];
+    Object.values(plan.targets).sort((a, b) => a.d < b.d ? -1 : 1).forEach(t => pts.push([nm(t.p), cn(t.c), (t.run || '').replace('@', ' '), t.d, t.due || '', Number(st.targetPoints) || 100]));
+    plan.people.filter(x => !App.isB(x.id)).forEach(x => pts.push([nm(x.id), 'TOTAL', '', '', '', App.points(x.id)]));
+    const fus = [['Company', 'Date', '6 pm follow-up points']];
+    Object.keys(plan.followups).sort().forEach(k => { const [c, d] = k.split('|'); fus.push([cn(c), d, plan.followups[k]]); });
+    const lv = [['Person', 'Date']];
+    Object.keys(plan.leave).sort().forEach(k => { const [pid, d] = k.split('|'); lv.push([nm(pid), d]); });
+    IO.download(IO.xlsx([{ name: 'Person-wise', rows: pw }, { name: 'Hours', rows: hrs }, { name: 'Day grid', rows: daily }, { name: 'Company-wise', rows: comp }, { name: 'Meetings', rows: meet }, { name: 'Advance & billing', rows: pay }, { name: 'All work', rows: sched }, { name: 'Remarks', rows: rem }, { name: 'Points', rows: pts }, { name: 'Company follow-ups', rows: fus }, { name: 'Leave', rows: lv }]), `timetable-${st.start}-to-${st.end}.xlsx`);
     toast('Excel downloaded.');
   }
 })();

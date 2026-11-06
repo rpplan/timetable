@@ -251,6 +251,32 @@
       });
     });
 
+    // Leave: the person's work that day moves to their next working day (meetings are just missed).
+    const leave = plan.leave || {};
+    const onLeave = (pid, s) => !!leave[pid + '|' + s];
+    const nextWorkDay = (pid, s) => { let d = s; for (let i = 0; i < 40; i++) { d = D.add(d, 1); if (!isOff(d, false) && !pOff(pid, d) && !onLeave(pid, d)) return d; } return null; };
+    const carried = [];
+    live.forEach(o => {
+      const gone = o.people.filter(pid => onLeave(pid, o.date));
+      if (!gone.length) return;
+      o.onLeave = gone; o.people = o.people.filter(pid => !gone.includes(pid));
+      if (o.type === 'meeting' || o.type === 'review') return;
+      gone.forEach(pid => {
+        const nd = nextWorkDay(pid, o.date);
+        if (!nd) return;
+        // a site run day is only carried when the person is not already on that run the next day
+        if (o.runKey && o.siteGroup && live.some(x => x.runKey === o.runKey && x.date === nd && x.people.includes(pid))) {
+          if (inWin(o.date)) notes.push({ level: 'info', kind: 'leave', date: o.date, person: pid, keys: [o.key], text: `${personName(plan, pid)} is on leave on ${D.nice(o.date)}: the companies of ${o.title} are moved to the other days of the run.` });
+          return;
+        }
+        carried.push(Object.assign({}, o, { key: o.key + '~' + pid, date: nd, people: [pid], carried: true, carriedFrom: o.date, onLeave: null,
+          timeSet: false, overridden: false, away: null, inOffice: null, offToday: null }));
+        if (inWin(o.date)) notes.push({ level: 'info', kind: 'leave', date: o.date, person: pid, keys: [o.key],
+          text: `${personName(plan, pid)} is on leave on ${D.nice(o.date)}: ${o.title} moved to ${D.nice(nd)}.` + (inWin(nd) ? '' : ' That is after the end of this timetable.') });
+      });
+    });
+    live = live.filter(o => o.people.length || !(o.onLeave && o.onLeave.length) || o.type === 'meeting').concat(carried);
+
     // Office-only days: people on "no site measurement" work (billing, advances, PPV...) are taken off site work that day
     const office = {};
     live.forEach(o => { if (o.noSite) o.people.forEach(pid => { const k = pid + '|' + o.date; if (!office[k]) office[k] = o.title; }); });
@@ -289,11 +315,12 @@
       const list = runs[rk].sort((a, b) => a.date < b.date ? -1 : 1);
       const t = taskById[list[0].taskId];
       const ppl = normPeople(plan, t.people);
-      const pDates = {}; ppl.forEach(pid => { pDates[pid] = list.filter(o => o.people.includes(pid)).map(o => o.date); });
+      const pDates = {}; ppl.forEach(pid => { pDates[pid] = list.filter(o => o.people.includes(pid)).map(o => o.date).sort(); });
+      const tDays = Math.max(1, st.targetDays || 7);
       const taken = {}, usedBy = {};
       ppl.forEach(pid => { taken[pid] = new Set(); });
-      const push = (cid, pid, date, together) => {
-        const vk = `${rk}|${cid}|${pid}`;
+      const push = (cid, pid, date, together, repeat) => {
+        const vk = `${rk}|${cid}|${pid}` + (repeat ? `#${date}` : '');
         const vo = (plan.visitOverrides || {})[vk];
         const d = (vo && vo.date) || date;
         if (!d) {
@@ -302,9 +329,12 @@
           return;
         }
         taken[pid] && taken[pid].add(d); (usedBy[cid] = usedBy[cid] || new Set()).add(d);
+        const start = (pDates[pid] && pDates[pid][0]) || list[0].date;
         visits.push({ key: vk, runKey: rk, taskId: t.id, company: cid, person: (vo && vo.person) || pid, date: d, together: !!together,
-          cycle: t.cycle || (t.siteGroup === 'outstation' ? 'Outstation' : ''), moved: !!vo, siteGroup: t.siteGroup });
+          start, due: D.add(start, tDays - 1),
+          cycle: t.cycle || (t.siteGroup === 'outstation' ? 'Outstation' : ''), moved: !!vo, siteGroup: t.siteGroup, repeat: !!repeat });
       };
+      const perDay = (pid, d) => visits.filter(v => v.runKey === rk && v.person === pid && v.date === d).length;
       const comp = id => plan.companies.find(c => c.id === id) || {};
       const has = (pid, cid) => (((plan.responsibilities[pid] || {})[t.siteGroup]) || []).includes(cid);
       plan.companies.filter(c => c.together && ppl.some(pid => has(pid, c.id))).forEach(c => {
@@ -317,7 +347,27 @@
         (((plan.responsibilities[pid] || {})[t.siteGroup]) || []).forEach(cid => {
           if (comp(cid).together) return;
           const d = pDates[pid].find(x => !taken[pid].has(x) && !(usedBy[cid] && usedBy[cid].has(x)));
+          if (!d && t.fillDays) return;      // placed below as a second company on a day
           push(cid, pid, d || null);
+        });
+        if (!t.fillDays) return;
+        // One of the person's own companies on every day of the run:
+        const mine = (((plan.responsibilities[pid] || {})[t.siteGroup]) || []).filter(cid => !comp(cid).together);
+        if (!mine.length || !pDates[pid].length) return;
+        // a) companies that got no day of their own share a day (Slot 1 / Slot 2), so none is left out
+        mine.filter(cid => !visits.some(v => v.key === `${rk}|${cid}|${pid}`)).forEach(cid => {
+          const d = pDates[pid].find(x => perDay(pid, x) === 1 && !(usedBy[cid] && usedBy[cid].has(x)));
+          push(cid, pid, d || null);
+        });
+        // b) days still without a company get the next company in turn (a follow-up visit)
+        let i = 0;
+        pDates[pid].forEach(d => {
+          if (taken[pid].has(d)) return;
+          for (let k = 0; k < mine.length; k++, i++) {
+            const cid = mine[i % mine.length];
+            if (usedBy[cid] && usedBy[cid].has(d)) continue;
+            push(cid, pid, d, false, true); i++; break;
+          }
         });
       });
     });
@@ -349,7 +399,7 @@
       e.keep = e.o.type === 'outstation';           // an outstation day is not split with office work
       e.slots = [];
     });
-    flex.sort((x, y) => (y.keep - x.keep) || (x.want.length - y.want.length) || (T.m(x.o.start) - T.m(y.o.start)) || (x.key < y.key ? -1 : 1));
+    flex.sort((x, y) => (y.keep - x.keep) || ((y.o.carried ? 1 : 0) - (x.o.carried ? 1 : 0)) || (x.want.length - y.want.length) || (T.m(x.o.start) - T.m(y.o.start)) || (x.key < y.key ? -1 : 1));
     const owner = {};
     const freeIn = (i, a, b) => intersect(intersect(free, slots[i]), [a, b]);
     flex.forEach(e => {
@@ -410,6 +460,8 @@
       const ok = gen.occs.some(o => o.runKey === v.runKey && o.date === v.date && o.people.includes(v.person));
       if (!ok) out.push({ level: 'warn', kind: 'visit', date: v.date, person: v.person, text: `${companyName(plan, v.company)} site day on ${D.nice(v.date)}: ${personName(plan, v.person)} is not on that measurement run that day.` });
     });
+    gen.visits.forEach(v => { if (v.date > v.due) out.push({ level: 'warn', kind: 'target', date: v.date, person: v.person,
+      text: `${companyName(plan, v.company)} site day for ${personName(plan, v.person)} on ${D.nice(v.date)} is after the ${st.targetDays || 7}-day target (${D.nice(v.start)} to ${D.nice(v.due)}).` }); });
     const order = { clash: 0, warn: 1, info: 2 };
     return out.sort((a, b) => (order[a.level] - order[b.level]) || ((a.date || '') < (b.date || '') ? -1 : 1));
   }

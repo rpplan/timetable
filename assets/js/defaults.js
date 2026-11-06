@@ -82,10 +82,10 @@
     { id: 'meet-sunniva-1', title: 'Joint meet: Sunniva SDL', type: 'meeting', mode: 'monthly', days: [5], people: ALLP, start: MEET[0], end: MEET[1], companies: ['sunniva-sdl'], details: meetDetail, holiday: 'shift', agenda: ag('Sunniva SDL', A75) },
     { id: 'meet-kipl-1', title: 'Joint meet: KIPL', type: 'meeting', mode: 'monthly', days: [6], people: ALLP, start: MEET[0], end: MEET[1], companies: ['kipl-sdl', 'kipl-sol', 'kipl-misc'], details: meetDetail, holiday: 'shift', agenda: ag('KIPL', A75) },
     { id: 'meet-mahto-1', title: 'Joint meet: Mahto, other contractor bills', type: 'meeting', mode: 'monthly', days: [7], people: ALLP, start: MEET[0], end: MEET[1], companies: ['mahto-sol'].concat(OTHER), details: meetDetail, holiday: 'shift', agenda: ag('Mahto & other contractors', A75) },
-    { id: 'site-c1', title: 'Site measurements C-1', type: 'site', mode: 'monthly', days: [5, 6, 7, 8, 9, 10, 11], people: ['N', 'R', 'S', 'P'], start: DAY[0], end: DAY[1], siteGroup: 'main', cycle: 'C-1',
+    { id: 'site-c1', maxDays: 7, title: 'Site measurements C-1', type: 'site', mode: 'monthly', days: [5, 6, 7, 8, 9, 10, 11], people: ['N', 'R', 'S', 'P'], start: DAY[0], end: DAY[1], siteGroup: 'main', cycle: 'C-1',
       details: 'Main contractors, with sheet preparation, cement calculation.', holiday: 'skip' },
     { id: 'bill1', title: 'BILLING-1', type: 'billing', mode: 'monthly', days: [8, 9], people: ['P', 'B'], start: DAY[0], end: DAY[1], companies: MAIN5, details: billSteps, holiday: 'shift', noSite: true },
-    { id: 'site-c2', title: 'Site measurements C-2', type: 'site', mode: 'monthly', days: [12, 13, 14, 15, 16, 17, 18], people: ['N', 'R', 'S', 'P'], start: DAY[0], end: DAY[1], siteGroup: 'other', cycle: 'C-2',
+    { id: 'site-c2', maxDays: 7, fillDays: true, title: 'Site measurements C-2', type: 'site', mode: 'monthly', days: [12, 13, 14, 15, 16, 17, 18], people: ['N', 'R', 'S', 'P'], start: DAY[0], end: DAY[1], siteGroup: 'other', cycle: 'C-2',
       details: 'For other contractors or main contractors.', holiday: 'skip' },
     { id: 'adv2', title: 'ADV-2 advances', type: 'advance', mode: 'monthly', days: [18], people: ['P', 'B'], start: DAY[0], end: DAY[1], companies: MAIN5, details: advSteps, holiday: 'shift', noSite: true },
     { id: 'bill2', title: 'BILLING-2', type: 'billing', mode: 'monthly', days: [19], people: ['P', 'B'], start: DAY[0], end: DAY[1], companies: MAIN5.concat(OTHER), details: billSteps + ' Includes other contractors.', holiday: 'shift', noSite: true },
@@ -95,7 +95,7 @@
     { id: 'meet-sunniva-2', title: 'Joint meet: Sunniva', type: 'meeting', mode: 'monthly', days: [24], people: ALLP, start: MEET[0], end: MEET[1], companies: ['sunniva-sdl'], details: meetDetail, holiday: 'shift', agenda: ag('Sunniva', A75) },
     { id: 'meet-kipl-2', title: 'Joint meet: KIPL', type: 'meeting', mode: 'monthly', days: [25], people: ALLP, start: MEET[0], end: MEET[1], companies: ['kipl-sdl', 'kipl-sol', 'kipl-misc'], details: meetDetail, holiday: 'shift', agenda: ag('KIPL', A75) },
     { id: 'meet-mahto-2', title: 'Joint meet: Mahto, other contractor bills', type: 'meeting', mode: 'monthly', days: [26], people: ALLP, start: MEET[0], end: MEET[1], companies: ['mahto-sol'].concat(OTHER), details: meetDetail, holiday: 'shift', agenda: ag('Mahto & other contractors', A75) },
-    { id: 'site-c3', title: 'Site measurements C-3', type: 'site', mode: 'monthly', days: [24, 25, 26, 27, 28, 29, 30], people: ['N', 'R', 'S', 'P'], start: DAY[0], end: DAY[1], siteGroup: 'main', cycle: 'C-3',
+    { id: 'site-c3', maxDays: 7, title: 'Site measurements C-3', type: 'site', mode: 'monthly', days: [24, 25, 26, 27, 28, 29, 30], people: ['N', 'R', 'S', 'P'], start: DAY[0], end: DAY[1], siteGroup: 'main', cycle: 'C-3',
       details: 'Main contractors with sheet preparation, cement calculation.', holiday: 'skip' },
     { id: 'review', title: 'Daily check by B', type: 'review', mode: 'daily', people: ['B'], start: '18:30', end: '19:00',
       details: 'B checks the day\'s work of everyone and maintains the timetable. Monday to Friday.' },
@@ -104,11 +104,14 @@
   ];
 
   g.DEFAULT_PLAN = {
-    version: 3,
+    version: 5,
     title: 'Works timetable',
     settings: { start: '2026-11-05', end: '2026-12-09', workStart: '10:30', workEnd: '19:00',
       slots: [{ start: '10:30', end: '13:30' }, { start: '14:30', end: '19:00' }],
-      lunchStart: '13:30', lunchEnd: '14:30', sundayOff: true, sundayStreak: true, maxHours: 9 },
+      lunchStart: '13:30', lunchEnd: '14:30', sundayOff: true, sundayStreak: true, maxHours: 9,
+      targetDays: 7, targetPoints: 100, retentionDays: 45, bPin: '',
+      // B's private admin hours: Saturday and Sunday, and Monday up to 12 noon
+      adminHours: [{ dow: 6, start: '09:00', end: '19:00' }, { dow: 0, start: '09:00', end: '19:00' }, { dow: 1, start: '08:00', end: '12:00' }] },
     holidays: [{ date: '2026-11-08', name: 'Diwali' }, { date: '2026-11-09', name: 'Diwali' }, { date: '2026-11-10', name: 'Diwali' }, { date: '2026-11-11', name: 'Diwali' }],
     people, companies, responsibilities, tasks,
     notes: [
@@ -118,8 +121,14 @@
       'Person-wise timetable with time allotment per day, per week, per month.', 'Company-wise chart: each company gets separate days for work on site.',
       'Meeting timetable with agenda and minutes for each agenda item.', 'Timetable for each advance payment day for P1 & B.',
       'Timetable for each billing day for P1 & B.', 'Daily quick review agenda for B to check everyone\'s work.',
-      'Anyone out of station does not join the meeting.', 'Past days are read only, with remarks on what was done.'
+      'Anyone out of station does not join the meeting.', 'Past days are read only, with remarks on what was done.',
+      'Each site measurement has a target of 7 days. Ticking "done in time" gives 100 points.',
+      'B marks importance Low, Medium or High on everyone\'s work.', 'Clearance form checkbox for every daily task of N, R, S, P/P1.',
+      'Daily records of N, R, S, P/P1 are deleted after 45 days. B\'s records are kept until B deletes them.',
+      'B has a private admin schedule for Saturday, Sunday and Monday morning, opened with a pattern.',
+      'On leave: the day\'s work moves to the next working day.'
     ],
-    away: {}, overrides: {}, visitOverrides: {}, status: {}, reviews: {}, remarks: {}, extra: []
+    away: {}, overrides: {}, visitOverrides: {}, status: {}, reviews: {}, remarks: {}, extra: [],
+    importance: {}, clear: {}, leave: {}, targets: {}, followups: {}, admin: {}
   };
 })(window);

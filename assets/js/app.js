@@ -74,6 +74,7 @@
     whereLabel(date, pid) {
       const hol = this.data.gen.hol[date];
       if (hol) return { k: 'off', text: hol };
+      if (this.onLeave(pid, date)) return { k: 'leave', text: 'On leave' };
       if (Engine.personOff(Store.plan, pid, date) && !(this.data.byDate[date] || []).some(o => o.people.includes(pid))) return { k: 'off', text: 'Weekly day off' };
       const mine = (this.data.byDate[date] || []).filter(o => o.people.includes(pid) && o.type !== 'review');
       const out = mine.find(o => o.type === 'outstation');
@@ -120,7 +121,9 @@
       root.innerHTML = v.render(this.route.params);
       if (v.mount) v.mount(root, this.route.params);
       bindCommon(root);
-      $$('#nav a').forEach(a => { const on = a.dataset.view === this.route.view; a.classList.toggle('on', on); a.setAttribute('aria-current', on ? 'page' : 'false'); });
+      App.bindExtras(root);
+      const navView = { company: 'companies' }[this.route.view] || this.route.view;
+      $$('#nav a').forEach(a => { const on = a.dataset.view === navView; a.classList.toggle('on', on); a.setAttribute('aria-current', on ? 'page' : 'false'); });
       $('#undo').disabled = !Store.undoStack.length;
       const n = this.data.iss.filter(i => i.level === 'clash').length;
       const b = $('#clash-badge'); b.hidden = !n; b.textContent = n === 1 ? '1 clash' : `${n} clashes`;
@@ -137,12 +140,14 @@
     moveOcc(key, date) {
       const o = this.data.byKey[key]; if (!o || o.date === date) return;
       if (this.isPast(date) || this.isPast(o.date)) { toast('Past days are closed. Write a remark instead.'); return; }
+      if (o.carried) { toast('This work was carried over from leave. Cancel the leave to move it back.'); return; }
       if (key.startsWith('x:')) return this.commit(`Moved ${o.title} to ${D.nice(date)}`, p => { p.extra.find(x => 'x:' + x.id === key).date = date; });
       this.commit(`Moved ${o.title} to ${D.nice(date)}`, p => { p.overrides[key] = Object.assign({}, p.overrides[key] || {}, { date }); });
     },
     reassign(key, from, to) {
       const o = this.data.byKey[key]; if (!o || from === to) return;
       if (this.isPast(o.date)) { toast('Past days are closed. Write a remark instead.'); return; }
+      if (o.carried) { toast('This work was carried over from leave. Cancel the leave to change it.'); return; }
       const ppl = o.people.filter(p => p !== from); if (!ppl.includes(to)) ppl.push(to);
       const visits = o.siteGroup ? this.visitsFor(o, from) : [];
       this.commit(`${this.pname(to)} now does ${this.personLabel(o, from)} on ${D.nice(o.date)}`, p => {
@@ -177,16 +182,18 @@
     openOcc(key) {
       const o = this.data.byKey[key]; if (!o) return;
       if (this.isPast(o.date)) { toast('This day is over, so it can no longer be changed. Add a remark on the Today page.'); return; }
+      if (o.carried) { toast(`Carried over from ${D.nice(o.carriedFrom)} (leave). Cancel the leave on that day to put it back.`); return; }
       const plan = Store.plan, isExtra = key.startsWith('x:'), t = isExtra ? null : this.task(o.taskId);
       const clashes = this.data.iss.filter(i => i.level === 'clash' && (i.keys || []).includes(key));
       const outRun = o.type === 'outstation' && o.runKey ? this.outstationRuns().filter(r => r.runKey === o.runKey) : [];
       const site = o.siteGroup ? o.people.map(pid => `<li>${this.who(pid)} <span>${esc(this.personLabel(o, pid))}</span></li>`).join('') : '';
-      const times = o.people.map(pid => `<li>${this.who(pid)} <b>${esc(this.timeText(o, pid))}</b></li>`).join('');
+      const times = o.people.map(pid => `<li>${this.who(pid)} <b>${esc(this.timeText(o, pid))}</b> ${this.impControl(key, pid)}</li>`).join('');
       modal({
         title: o.title,
         body: `<p class="muted">${this.typeTag(o.type)} ${esc(D.nice(o.date, { long: true }))}, planned ${esc(this.timeText(o))}${o.shifted ? `. Moved from ${D.nice(o.planned)}` : ''}</p>
           ${o.inOffice && o.inOffice.length ? `<p class="note">In the office, no site work today: ${o.inOffice.map(x => esc(this.pname(x.pid) + ' (' + x.why + ')')).join(', ')}</p>` : ''}
           ${o.offToday && o.offToday.length ? `<p class="note">Weekly day off: ${o.offToday.map(p => esc(this.pname(p))).join(', ')}</p>` : ''}
+          ${o.onLeave && o.onLeave.length ? `<p class="note">On leave (work moved to their next working day): ${o.onLeave.map(p => esc(this.pname(p))).join(', ')}</p>` : ''}
           ${clashes.map(c => `<p class="alert">${esc(c.text)}</p>`).join('')}
           ${o.away && o.away.length ? `<p class="note">Out of station, not attending: ${o.away.map(p => esc(this.pname(p))).join(', ')}</p>` : ''}
           ${outRun.length ? `<div class="box"><b>Who goes outstation this trip?</b><p class="muted small">Untick anyone who stays in town. People who go do not join meetings on those days.</p>
@@ -251,7 +258,8 @@
           <fieldset><legend>Who</legend>${this.peoplePicker('pp', pid ? [pid] : [])}</fieldset>
           <div class="row2"><label>Kind<select name="type">${Object.keys(TYPES).map(k => `<option value="${k}" ${k === 'office' ? 'selected' : ''}>${TYPES[k].label}</option>`).join('')}</select></label>
           <label>Company<select name="company"><option value="">None</option>${companyOptions('')}</select></label></div>
-          <label class="check"><input type="checkbox" name="noSite"> Office work: no site measurement for these people that day</label></form>`,
+          <label class="check"><input type="checkbox" name="noSite"> Office work: no site measurement for these people that day</label>
+          ${App.bOn() ? `<label>Importance<select name="importance"><option value="">Not set</option>${Object.keys(App.IMP).map(k => `<option value="${k}">${App.IMP[k].label}</option>`).join('')}</select></label>` : ''}</form>`,
         foot: `<span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" form="x-form" class="btn primary">Add</button>`,
         onOpen: m => {
           const sel = $('#x-slot', m), f = $('#x-form', m);
@@ -262,7 +270,7 @@
             if (T.m(fd.get('end')) <= T.m(fd.get('start'))) { toast('The end time must be after the start time.'); return; }
             if (App.isPast(fd.get('date'))) { toast('Pick today or a later day.'); return; }
             if (Engine.inGap(fd.get('start'), plan.settings)) { toast(`Start inside a working slot: ${App.slotsText()}.`); return; }
-            const x = { id: 'e' + Date.now().toString(36), title: fd.get('title'), date: fd.get('date'), start: fd.get('start'), end: fd.get('end'), type: fd.get('type'), people: fd.getAll('pp'), companies: fd.get('company') ? [fd.get('company')] : [], details: '', noSite: !!fd.get('noSite') };
+            const x = { id: 'e' + Date.now().toString(36), title: fd.get('title'), date: fd.get('date'), start: fd.get('start'), end: fd.get('end'), type: fd.get('type'), people: fd.getAll('pp'), companies: fd.get('company') ? [fd.get('company')] : [], details: '', noSite: !!fd.get('noSite'), importance: fd.get('importance') || '' };
             closeModal(); App.commit(`Added ${x.title}, ${D.nice(x.date)}. Other work moved around it.`, p => p.extra.push(x));
           };
         }
@@ -284,6 +292,8 @@
           <label data-for="monthly">If the date is a holiday<select name="holiday"><option value="shift" ${t.holiday !== 'skip' ? 'selected' : ''}>Move to the next working day</option><option value="skip" ${t.holiday === 'skip' ? 'selected' : ''}>Skip it</option></select></label>
           <fieldset><legend>Who</legend>${this.peoplePicker('pp', Engine.normPeople(plan, t.people))}</fieldset>
           <label class="check"><input type="checkbox" name="noSite" ${t.noSite ? 'checked' : ''}> Office work: these people do no site measurement on these days</label>
+          ${t.siteGroup ? `<label class="check"><input type="checkbox" name="fillDays" ${t.fillDays ? 'checked' : ''}> Each person measures one of their own companies on every day of this run</label>` : ''}
+          ${App.bOn() ? `<label>Importance (set by B)<select name="importance"><option value="">Not set</option>${Object.keys(App.IMP).map(k => `<option value="${k}" ${t.importance === k ? 'selected' : ''}>${App.IMP[k].label}</option>`).join('')}</select></label>` : (t.importance ? `<p class="muted small">Importance: ${App.IMP[t.importance].label} (B can change it in B mode)</p>` : '')}
           <label>Details<textarea name="details" rows="2">${esc(t.details || '')}</textarea></label></form>`,
         foot: `${!isNew ? '<button type="button" class="btn ghost danger" id="t-del">Delete</button>' : ''}<span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" form="t-form" class="btn primary">Save</button>`,
         onOpen: m => {
@@ -293,6 +303,8 @@
             e.preventDefault(); const fd = new FormData(e.target);
             if (T.m(fd.get('end')) <= T.m(fd.get('start'))) { toast('The end time must be after the start time.'); return; }
             Object.assign(t, { title: fd.get('title'), type: fd.get('type'), mode: fd.get('mode'), start: fd.get('start'), end: fd.get('end'), days: fd.getAll('days').map(Number), perWeek: Number(fd.get('perWeek')) || 2, holiday: fd.get('holiday'), people: fd.getAll('pp'), details: fd.get('details'), noSite: !!fd.get('noSite') });
+            if (t.siteGroup) t.fillDays = !!fd.get('fillDays');
+            if (App.bOn()) t.importance = fd.get('importance') || '';
             if (Engine.inGap(t.start, plan.settings)) { toast(`Start inside a working slot: ${App.slotsText()}.`); return; }
             if (t.mode === 'monthly' && !t.days.length) { toast('Tick at least one date.'); return; }
             closeModal(); App.commit(`Saved ${t.title}`, p => { const i = p.tasks.findIndex(x => x.id === t.id); if (i >= 0) p.tasks[i] = t; else p.tasks.push(t); });
@@ -344,6 +356,11 @@
     });
     $$('[data-rs], [data-rt]', root).forEach(el => el.addEventListener('change', () => {
       const k = el.dataset.rs || el.dataset.rt, f = el.dataset.rs ? 's' : 't';
+      if (f === 't') {   // text: saved quietly so typing and moving to the next box is not interrupted
+        const r = Object.assign({}, Store.plan.remarks[k] || {}); if (el.value) r.t = el.value; else delete r.t;
+        if (Object.keys(r).length) Store.plan.remarks[k] = r; else delete Store.plan.remarks[k];
+        Store.save(true); toast('Remark saved.'); return;
+      }
       App.keepScroll = true;
       Store.change('Remark saved', p => { p.remarks = p.remarks || {}; const r = Object.assign({}, p.remarks[k] || {}); if (el.value) r[f] = el.value; else delete r[f]; if (Object.keys(r).length) p.remarks[k] = r; else delete p.remarks[k]; });
       toast('Remark saved.');

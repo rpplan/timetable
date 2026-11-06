@@ -1,5 +1,5 @@
 {
- "version": 3,
+ "version": 5,
  "title": "Works timetable",
  "settings": {
   "start": "2026-11-05",
@@ -20,7 +20,28 @@
   "lunchEnd": "14:30",
   "sundayOff": true,
   "sundayStreak": true,
-  "maxHours": 9
+  "maxHours": 9,
+  "targetDays": 7,
+  "targetPoints": 100,
+  "retentionDays": 45,
+  "bPin": "",
+  "adminHours": [
+   {
+    "dow": 6,
+    "start": "09:00",
+    "end": "19:00"
+   },
+   {
+    "dow": 0,
+    "start": "09:00",
+    "end": "19:00"
+   },
+   {
+    "dow": 1,
+    "start": "08:00",
+    "end": "12:00"
+   }
+  ]
  },
  "holidays": [
   {
@@ -596,6 +617,7 @@
   },
   {
    "id": "site-c1",
+   "maxDays": 7,
    "title": "Site measurements C-1",
    "type": "site",
    "mode": "monthly",
@@ -649,6 +671,8 @@
   },
   {
    "id": "site-c2",
+   "maxDays": 7,
+   "fillDays": true,
    "title": "Site measurements C-2",
    "type": "site",
    "mode": "monthly",
@@ -997,6 +1021,7 @@
   },
   {
    "id": "site-c3",
+   "maxDays": 7,
    "title": "Site measurements C-3",
    "type": "site",
    "mode": "monthly",
@@ -1068,7 +1093,13 @@
   "Timetable for each billing day for P1 & B.",
   "Daily quick review agenda for B to check everyone's work.",
   "Anyone out of station does not join the meeting.",
-  "Past days are read only, with remarks on what was done."
+  "Past days are read only, with remarks on what was done.",
+  "Each site measurement has a target of 7 days. Ticking \"done in time\" gives 100 points.",
+  "B marks importance Low, Medium or High on everyone's work.",
+  "Clearance form checkbox for every daily task of N, R, S, P/P1.",
+  "Daily records of N, R, S, P/P1 are deleted after 45 days. B's records are kept until B deletes them.",
+  "B has a private admin schedule for Saturday, Sunday and Monday morning, opened with a pattern.",
+  "On leave: the day's work moves to the next working day."
  ],
  "away": {},
  "overrides": {},
@@ -1076,5 +1107,11 @@
  "status": {},
  "reviews": {},
  "remarks": {},
- "extra": []
+ "extra": [],
+ "importance": {},
+ "clear": {},
+ "leave": {},
+ "targets": {},
+ "followups": {},
+ "admin": {}
 }
