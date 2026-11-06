@@ -1,4 +1,4 @@
-# Works timetable (version 7)
+# Works timetable (version 8)
 
 The office timetable from **B_planning_of_works.xlsx**: who measures which company, outstation trips, billing and advance days, meetings, targets and points.
 A plain static website (no build step) for GitHub Pages. **Only B can open it**: nothing is shown until B logs in.
@@ -36,8 +36,8 @@ Only the light/dark choice is kept unencrypted. Backups (Edit → Excel & backup
 | Companies | The three groups with their days, who measures each company, and its site days. Click a name for the company's monthly schedule. |
 | Meetings | Dates, attendance and agendas with minutes. |
 | Billing days | P1 and B's time slots per company on advance and billing days. |
-| **Link chart** | Employees and companies as boxes and lines, with a time bar (half hour, day, month) and Play. Drag to arrange, drag from an employee's dot onto a company to give work, click a line to hand over, remove or copy it. |
-| **Edit** | Every input in one place, in six sections: **Day** (leave, trip, importance, clearance, targets, billing ticks, remarks, B's check), **Week** (drag to move or hand over), **Companies** (who measures it, site days, importance, 6 pm follow-ups), **Plan** (repeating work and meeting agendas), **Settings** (hours, holidays, site windows, employees, points, records, Excel, backup, login), **B admin**. *Problems* appears only when there is one. |
+| **Link chart** | The one place to see and arrange who works where and when: boxes and lines with a time bar (half hour, day, month) and Play. Drag from an employee's dot onto a company to give work; click a line to move it to another day, change its times, hand it over, remove it or copy it. |
+| **Edit** | Only what the Link chart does not show: **Day** (leave, trip, importance, clearance, targets, billing ticks, remarks, B's check), **Companies** (who measures it, moving site days, 6 pm follow-ups), **Plan** (repeating work and meeting agendas), **Settings**, **B admin**. *Problems* appears only when there is one. |
 
 Every page has a one-line description at the top; tap "About this page" for its purpose. Works on phones: the Week page becomes a day list, wide tables turn into cards, and the Link chart switches to a tall layout. On a laptop the Link chart fits the window. Every change, wherever it is made, is used by all pages, the chart, Excel and the PDFs.
 

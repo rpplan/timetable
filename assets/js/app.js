@@ -137,7 +137,7 @@
       bindCommon(root);
       App.bindExtras(root);
       const navView = { company: 'companies' }[this.route.view] || this.route.view;
-      $('#undo').hidden = !this.editing; $('#add').hidden = !this.editing;
+      $('#undo').hidden = !this.editing; $('#add').hidden = this.route.view !== 'chart';
       if (this.pendingOpen && this.editing) { const k = this.pendingOpen; this.pendingOpen = null; setTimeout(() => this.openOcc(k), 50); }
       $$('#nav a').forEach(a => { const on = a.dataset.view === navView; a.classList.toggle('on', on); a.setAttribute('aria-current', on ? 'page' : 'false'); });
       $('#undo').disabled = !Store.undoStack.length;

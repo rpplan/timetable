@@ -764,3 +764,15 @@ a.round.off { opacity: .35; pointer-events: none; }
   .co-tbl td.free[colspan] { padding-bottom: 4px; }
 }
 @media print { .week-list { display: none !important; } .week-table { display: block !important; } }
+.fu-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fu-list li { display: grid; grid-template-columns: 110px 1fr; gap: 10px; align-items: start; }
+.fu-list li.past .dd b { color: var(--past-ink2); }
+.fu-list .dd { padding-top: 6px; }
+.fu-list .dd b { display: inline; font-size: 15px; margin-right: 4px; }
+.fu-list textarea { width: 100%; min-height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; resize: none; overflow: hidden; background: var(--card); color: var(--ink); }
+.co-edit > * + * { margin-top: 12px; }
+.co-edit .tabs { margin: 0; }
+@media (max-width: 640px) { .fu-list li { grid-template-columns: 1fr; gap: 2px; } .fu-list .dd { padding-top: 0; } }
+#addco { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#addco input[name=name] { flex: 1 1 220px; width: auto; max-width: none; }
+#addco select { flex: 0 1 220px; width: auto; }

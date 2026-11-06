@@ -7,11 +7,10 @@
   const V = App.views;
 
   /* Six sections. Old addresses (#/edit?tab=billing etc.) lead to the section that now holds them. */
-  const OLD = { company: 'companies', billing: 'day', trips: 'day', work: 'plan', meetings: 'plan', who: 'settings', office: 'settings', records: 'settings', data: 'settings', security: 'settings' };
+  const OLD = { week: 'chart', company: 'companies', billing: 'day', trips: 'day', work: 'plan', meetings: 'plan', who: 'settings', office: 'settings', records: 'settings', data: 'settings', security: 'settings' };
   const TABS = [
-    ['day', 'Day', () => dayPage, { what: 'Day: everything to fill in for one day.', why: 'Leave, outstation trip, importance, clearance forms, 7-day target ticks, billing ticks, remarks and B\'s daily check, person by person. Past days: only status and remarks.' }],
-    ['week', 'Week', () => V.week, { what: 'Week: move or hand over work.', why: 'Drag work to another day, or onto another person on the same day. Click work to change its time or people.' }],
-    ['companies', 'Companies', () => companiesTab, { what: 'Companies: one company at a time.', why: 'Who measures it, its site days, importance, and the 6 pm follow-up points for every day of the month.' }],
+    ['day', 'Day', () => dayPage, { what: 'Day: the ticks and notes for one day.', why: 'Leave, outstation trip, importance, clearance forms, 7-day target ticks, billing ticks, remarks and B\'s daily check. Who works where and when is in the Link chart: add, move, hand over or copy work there.' }],
+    ['companies', 'Companies', () => companiesTab, { what: 'Companies: one company at a time.', why: 'Who measures it, moving its site days, and the 6 pm follow-up points for every day of the month. Its timetable is in the Link chart and on the Companies page.' }],
     ['plan', 'Plan', () => planPage, { what: 'Plan: the work that repeats every month.', why: 'Site runs C-1, C-2, C-3, outstation trips, meetings with their agendas, billing, advances and office work.' }],
     ['settings', 'Settings', () => settingsPage, { what: 'Settings: set once, change rarely.', why: 'Hours and holidays, site windows, employees, who measures what, points and records, Excel and backup, login.' }],
     ['admin', 'B admin', () => adminPage, { what: 'B admin: B\'s private hourly schedule.', why: 'Saturday, Sunday and Monday up to 12 noon, opened with B\'s pattern.' }],
@@ -22,6 +21,7 @@
     title: 'Edit', editing: true,
     render(p) {
       const want = OLD[p.tab] || p.tab;
+      if (want === 'chart') { setTimeout(() => App.go('chart'), 0); return ''; }   // moving work is done in the Link chart
       const tab = TABS.find(t => t[0] === want) || TABS[0];
       const sub = tab[2]();
       const nProb = App.data.iss.filter(i => i.level !== 'info').length;
@@ -49,7 +49,7 @@
           <input type="date" value="${date}" min="${st.start}" max="${st.end}" id="ed-date" aria-label="Choose a day">
           <a class="round ${next > st.end ? 'off' : ''}" href="#/edit?tab=day&date=${next}" aria-label="Next day">${icon('right')}</a></div>
           <b class="ed-daytitle">${esc(D.nice(date, { long: true }))}${today ? ' · today' : ''}</b>
-          ${!past && !hol ? `<button type="button" class="btn primary sm" data-add="${date}">${icon('plus')}Add work</button>` : ''}</div>
+          <a class="btn ghost sm" href="#/chart">${icon('link')}Add or move work in the Link chart</a></div>
         ${hol ? `<p class="banner">Holiday: ${esc(hol)}</p>` : ''}
         ${past ? '<p class="banner past-b">This day is over: only the status and remarks can be filled in.</p>' : ''}
         ${clashes.map(c => `<p class="banner warn">${esc(c.text)}</p>`).join('')}
@@ -74,7 +74,7 @@
     const trip = App.outstationRuns(pid).find(r => r.days.includes(date));
     const canLeave = !isB && !past && !hol && !off;
     const tg = today && !isB ? App.openTargets(pid) : [];
-    const head = `<header>${App.avatar(pid)}<b>${esc(x.name)}</b><span class="where w-${w.k}">${esc(w.text)}</span>
+    const head = `<header>${App.avatar(pid)}<b>${esc(x.name)}</b>
       <span class="ed-hchips">${trip && !past ? `<label class="tchip sm ${trip.going ? 'on' : ''}" title="Goes on the outstation trip ${esc(App.listDates(trip.days))}"><input type="checkbox" data-trip="${esc(trip.runKey)}|${esc(pid)}" ${trip.going ? 'checked' : ''}><span>Outstation</span></label>` : ''}
       ${canLeave ? `<button type="button" class="tchip sm leave ${leave ? 'on' : ''}" data-leave="${esc(pid)}|${date}|${leave ? '0' : '1'}">${leave ? '✓ On leave' : 'On leave'}</button>` : ''}</span></header>`;
     let body;
@@ -84,7 +84,7 @@
     else body = `<ul class="ed-rows">${list.map(e => {
       const ty = App.TYPES[e.o.type] || App.TYPES.office, k = e.key + '|' + pid, r = Store.plan.remarks[k] || {};
       const cf = !isB && e.o.type !== 'meeting' && date <= D.today();
-      return `<li style="--c:${ty.color}"><div class="ed-top"><span class="tm">${esc(e.noTime ? 'No free slot' : Engine.partsText(e.parts))}</span>${past ? `<span class="ed-name">${esc(App.personLabel(e.o, pid))}</span>` : `<button type="button" class="link ed-name" data-occ="${esc(e.key)}">${esc(App.personLabel(e.o, pid))}</button>`}</div>
+      return `<li style="--c:${ty.color}"><div class="ed-top"><span class="ed-name">${esc(App.personLabel(e.o, pid))}</span></div>
         <div class="ed-ctl">${e.o.type !== 'meeting' ? App.impControl(e.key, pid) : ''}${cf ? `<button type="button" class="tchip sm ${Store.plan.clear[k] ? 'on' : ''}" data-cf="${esc(k)}">${Store.plan.clear[k] ? '✓ ' : ''}Clearance form</button>` : ''}</div>
         ${date <= D.today() ? `<div class="rmk"><select data-rs="${esc(k)}" aria-label="Status"><option value="">Status…</option>${Object.keys(App.REMARK_LABELS).map(s => `<option value="${s}" ${r.s === s ? 'selected' : ''}>${App.REMARK_LABELS[s]}</option>`).join('')}</select><input data-rt="${esc(k)}" value="${esc(r.t || '')}" placeholder="Remark"></div>` : ''}</li>`;
     }).join('')}</ul>`;
@@ -95,10 +95,31 @@
   /* ---------- Companies: one company, with who measures it ---------- */
   const companiesTab = {
     render(p) {
-      return V.company.render(p) + `<form class="card form inline-add" id="addco"><b>New company</b><input name="name" placeholder="Name" required><select name="group">${Object.keys(App.GROUPS).map(g => `<option value="${g}">${App.GROUPS[g]}</option>`).join('')}</select><button class="btn ghost sm" type="submit">${icon('plus')}Add</button></form>`;
+      const plan = Store.plan, data = App.data, m = App.pickMonth(p);
+      const c = plan.companies.find(x => x.id === p.id) || plan.companies[0];
+      if (!c) return '<p class="free">No companies yet.</p>';
+      const dates = data.gen.dates.filter(d => D.month(d) === m), fu = plan.followups;
+      const vs = data.gen.visits.filter(v => v.company === c.id && D.month(v.date) === m).sort((a, b) => a.date < b.date ? -1 : 1);
+      const opts = Object.keys(App.GROUPS).map(gk => `<optgroup label="${App.GROUPS[gk]}">${plan.companies.filter(x => x.group === gk).map(x => `<option value="${esc(x.id)}" ${x.id === c.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('');
+      const months = [...new Set(data.gen.dates.map(D.month))];
+      return `<section class="co-edit">
+        <div class="ed-dayhead"><select id="co-pick" class="pick-sel" aria-label="Company">${opts}</select>
+          <nav class="tabs plain">${months.map(x => `<a href="#/edit?tab=companies&id=${encodeURIComponent(c.id)}&m=${x}" class="${x === m ? 'on' : ''}">${App.monthName(x)}</a>`).join('')}</nav>
+          <a class="btn ghost sm" href="#/company?id=${encodeURIComponent(c.id)}&m=${m}">See its timetable</a></div>
+        <div class="card co-set"><div class="co-set-row"><span class="muted small">Name</span><input class="co-name" data-cname="${esc(c.id)}" value="${esc(c.name)}" aria-label="Company name"><span class="muted small">${esc(App.GROUPS[c.group])}</span></div>
+          <div class="co-set-row"><span class="muted small">Measured by</span><span class="chipset">${plan.people.map(x => `<label class="pick sm" style="--pc:${x.color}"><input type="checkbox" data-resp="${esc(c.id)}|${esc(x.id)}" ${((plan.responsibilities[x.id] || {})[c.group] || []).includes(c.id) ? 'checked' : ''}><span>${esc(x.name)}</span></label>`).join('')}</span>
+          <label class="check small"><input type="checkbox" data-tog="${esc(c.id)}" ${c.together ? 'checked' : ''}> together on the same day</label></div>
+          <div class="co-set-row"><span class="muted small">Site days</span><span class="chipset">${vs.map(v => App.isPast(v.date) ? `<span class="dchip past" style="--pc:${App.pcolor(v.person)}">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</span>` : `<button type="button" class="dchip" data-visit="${esc(v.key)}" style="--pc:${App.pcolor(v.person)}" title="Move this site day">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</button>`).join('') || '<span class="muted small">none this month</span>'}</span></div>
+          <div class="co-set-row"><button type="button" class="btn ghost sm danger" data-rmco="${esc(c.id)}">${icon('trash')}Remove company</button></div></div>
+        <article class="card"><h3>6 pm follow-up points</h3><ul class="fu-list">${dates.map(d => { const k = c.id + '|' + d, hol = data.gen.hol[d];
+          return `<li class="${App.isPast(d) ? 'past' : ''}"><span class="dd"><b>${D.day(d)}</b>${D.DAYS[D.dow(d)].slice(0, 3)}${hol ? ` · ${esc(hol)}` : ''}</span><textarea data-fu="${esc(k)}" rows="1" placeholder="Follow-up points">${esc(fu[k] || '')}</textarea></li>`; }).join('')}</ul></article>
+      </section><form class="card form inline-add" id="addco"><b>New company</b><input name="name" placeholder="Name" required><select name="group">${Object.keys(App.GROUPS).map(g => `<option value="${g}">${App.GROUPS[g]}</option>`).join('')}</select><button class="btn ghost sm" type="submit">${icon('plus')}Add</button></form>`;
     },
     mount(root, p) {
-      V.company.mount(root, p); bindCompanyInputs(root);
+      bindCompanyInputs(root);
+      const pick = $('#co-pick', root); if (pick) pick.onchange = () => App.go('edit', { tab: 'companies', id: pick.value, m: App.pickMonth(p) });
+      $$('[data-fu]', root).forEach(t => { const grow = () => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }; grow(); t.oninput = grow;
+        t.onchange = () => { const k = t.dataset.fu; if (t.value.trim()) Store.plan.followups[k] = t.value; else delete Store.plan.followups[k]; Store.save(true); toast('Follow-up saved.'); }; });
       $('#addco', root).onsubmit = e => { e.preventDefault(); const fd = new FormData(e.target), name = fd.get('name').trim(); if (!name) return;
         const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now().toString(36).slice(-3);
         App.commit(`Added ${name}`, pl => { pl.companies.push({ id, name, group: fd.get('group') }); }); App.go('edit', { tab: 'companies', id }); };

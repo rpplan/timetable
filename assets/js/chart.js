@@ -145,14 +145,15 @@
   /* ---------- side panel: the selected line ---------- */
   function panel(root, links, step) {
     const box = $('#lc-panel', root), l = links.find(x => x.key === state.sel);
-    if (!l) { box.innerHTML = `<h3>How to use</h3><ol class="howto"><li><b>Move the time</b> with the bar or the arrows. Choose half hours, days or months.</li><li><b>Play</b> shows the work moving through the day.</li><li><b>Drag a box</b> to arrange the chart.</li><li><b>Drag from the dot</b> ● on an employee onto a company to give work at this time.</li><li><b>Click a line</b> to hand it over, remove it, or copy it to more days or hours.</li></ol>`; return; }
+    if (!l) { box.innerHTML = `<h3>How to use</h3><ol class="howto"><li><b>Move the time</b> with the bar or the arrows. Choose half hours, days or months.</li><li><b>Play</b> shows the work moving through the day.</li><li><b>Drag a box</b> to arrange the chart.</li><li><b>Drag from the dot</b> ● on an employee onto a company to give work at this time.</li><li><b>Click a line</b> to move it to another day, change its times, hand it over, remove it, or copy it to more days or hours.</li></ol>`; return; }
     const tgtName = OFFICE_NODES.find(n => n.id === l.node) ? OFFICE_NODES.find(n => n.id === l.node).name : App.cname(l.node);
     box.innerHTML = `<h3>${App.avatar(l.pid, 'sm')} ${esc(App.pname(l.pid))} → ${esc(tgtName)}</h3>
       <ul class="lc-items">${l.items.slice(0, 40).map((it, i) => `<li><div><b>${esc(D.nice(it.date))}</b> ${esc(Engine.partsText(it.e.parts))}<br><span class="muted small">${esc(it.label)}${it.o.extra ? ' · added by hand' : ''}</span></div>
-        ${App.isPast(it.date) ? '<span class="muted small">over</span>' : `<div class="lc-acts"><button type="button" class="btn ghost sm" data-copy="${i}">Copy…</button><button type="button" class="btn ghost sm" data-hand="${i}">Hand over…</button><button type="button" class="btn ghost sm danger" data-rm="${i}">${it.o.extra ? 'Delete' : 'Not this day'}</button></div>`}</li>`).join('')}</ul>
+        ${App.isPast(it.date) ? '<span class="muted small">over</span>' : `<div class="lc-acts"><button type="button" class="btn ghost sm" data-chg="${i}" title="Move to another day, change the times or the people">Move / change…</button><button type="button" class="btn ghost sm" data-copy="${i}">Copy…</button><button type="button" class="btn ghost sm" data-hand="${i}">Hand over…</button><button type="button" class="btn ghost sm danger" data-rm="${i}">${it.o.extra ? 'Delete' : 'Not this day'}</button></div>`}</li>`).join('')}</ul>
       ${l.items.length > 40 ? `<p class="muted small">and ${l.items.length - 40} more</p>` : ''}
       <button type="button" class="btn ghost sm" id="lc-unsel">Close</button>`;
     $('#lc-unsel', box).onclick = () => { state.sel = null; draw(root); };
+    $$('[data-chg]', box).forEach(b => b.onclick = () => App.openOcc(l.items[+b.dataset.chg].o.key));
     $$('[data-copy]', box).forEach(b => b.onclick = () => copyDialog([l.items[+b.dataset.copy]], step));
     $$('[data-rm]', box).forEach(b => b.onclick = () => { const it = l.items[+b.dataset.rm]; removeItem(it); });
     $$('[data-hand]', box).forEach(b => b.onclick = () => { const it = l.items[+b.dataset.hand]; handDialog(it); });
@@ -292,7 +293,7 @@
   V.chart = {
     title: 'Link chart', editing: true,
     desc: { what: 'Link chart: employees on the left and companies in their three groups on the right. Each line shows who works where at the time chosen on the time bar.',
-      why: 'To see the work move through the day, the month and between companies, and to give, hand over, remove or copy work by dragging and clicking.',
+      why: 'The one place to see and arrange who works where: give work by dragging, and click a line to move it to another day, change its times, hand it over, remove it or copy it.',
       edit: 'Changes made here are the same changes as in the Edit area; they show up on every page, in Excel and in the PDFs.' },
     render() {
       return `<section class="lc"><h1 class="print-only">Link chart</h1>
