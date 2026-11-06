@@ -80,6 +80,11 @@
     truck: '<path d="M3 7h11v9H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
     lock: '<rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V8a4 4 0 018 0v3"/>',
     unlock: '<rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V8a4 4 0 017.5-2"/>',
+    logout: '<path d="M14 5h4a1 1 0 011 1v12a1 1 0 01-1 1h-4"/><path d="M10 8l-4 4 4 4M6 12h10"/>',
+    link: '<path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/>',
+    play: '<path d="M8 5l11 7-11 7z"/>',
+    pause: '<path d="M8 5v14M16 5v14"/>',
+    auto: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 010 16z" fill="currentColor"/>',
     ruler: '<path d="M3 16L16 3l5 5L8 21z"/><path d="M7 12l2 2M10 9l2 2M13 6l2 2"/>'
   };
   function icon(name, cls) { return `<svg class="ico ${cls || ''}" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ''}</svg>`; }
@@ -177,5 +182,16 @@
     return '#' + [f(r), f(gg), f(b)].map(x => x.toString(16).padStart(2, '0')).join('');
   }
 
-  g.UI = { esc, $, $$, toast, modal, closeModal, confirmBox, icon, hbars, columns, lines, donut, shade, fmtN };
+  /* ---------- light / dark ---------- */
+  const mq = g.matchMedia ? g.matchMedia('(prefers-color-scheme: dark)') : null;
+  let themePref = 'auto';
+  function applyTheme(pref) {
+    themePref = pref || 'auto';
+    const dark = themePref === 'dark' || (themePref === 'auto' && mq && mq.matches);
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = dark ? '#161a22' : '#ffffff';
+  }
+  if (mq && mq.addEventListener) mq.addEventListener('change', () => applyTheme(themePref));
+
+  g.UI = { applyTheme, esc, $, $$, toast, modal, closeModal, confirmBox, icon, hbars, columns, lines, donut, shade, fmtN };
 })(window);

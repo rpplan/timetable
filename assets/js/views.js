@@ -1,24 +1,43 @@
-/* The seven pages: Today, Week, People, Companies, Meetings, Billing days, Setup. */
+/* View pages: Today, Week, Month, Employees, Companies (+ company monthly schedule), Meetings, Billing days.
+   They only show the timetable. When App.editing is true (inside the Edit area) the same pages show inputs. */
 (function () {
   'use strict';
   const { D, T } = Engine;
-  const { esc, $, $$, icon, toast, modal, closeModal } = UI;
+  const { esc, $, $$, icon, toast } = UI;
   const V = App.views;
+  const RANK = { high: 3, medium: 2, low: 1, '': 0 };
 
+  /* ---------- shared bits ---------- */
+  /* Links stay inside the Edit area when the page is shown there */
+  const EDIT_TAB = { today: 'day', week: 'week', company: 'company', meetings: 'meetings', billing: 'billing' };
+  function link(view, params) {
+    if (!App.editing) return `#/${view}${params ? '?' + new URLSearchParams(params).toString() : ''}`;
+    return `#/edit?${new URLSearchParams(Object.assign({ tab: EDIT_TAB[view] || App.route.params.tab || 'day' }, params || {})).toString()}`;
+  }
   function dayNav(view, date) {
     const st = Store.plan.settings, prev = D.add(date, -1), next = D.add(date, 1);
-    return `<div class="nav-date">
-      <button type="button" class="round" ${prev < st.start ? 'disabled' : ''} data-gov="${view}?date=${prev}" aria-label="Previous day">${icon('left')}</button>
-      <input type="date" value="${date}" min="${st.start}" max="${st.end}" data-pick="${view}" aria-label="Choose a day">
-      <button type="button" class="round" ${next > st.end ? 'disabled' : ''} data-gov="${view}?date=${next}" aria-label="Next day">${icon('right')}</button></div>`;
+    return `<div class="nav-date noprint">
+      <a class="round ${prev < st.start ? 'off' : ''}" href="${link(view, { date: prev })}" aria-label="Previous day">${icon('left')}</a>
+      <input type="date" value="${date}" min="${st.start}" max="${st.end}" data-pick="${esc(link(view, { date: 'DATE' }))}" aria-label="Choose a day">
+      <a class="round ${next > st.end ? 'off' : ''}" href="${link(view, { date: next })}" aria-label="Next day">${icon('right')}</a></div>`;
   }
-  function bindNav(root) {
-    $$('[data-gov]', root).forEach(b => b.onclick = () => { const [v, q] = b.dataset.gov.split('?'); App.go(v, Object.fromEntries(new URLSearchParams(q))); });
-    $$('[data-pick]', root).forEach(i => i.onchange = () => i.value && App.go(i.dataset.pick, { date: i.value }));
-  }
+  function bindNav(root) { $$('[data-pick]', root).forEach(i => i.onchange = () => { if (i.value) location.hash = i.dataset.pick.replace('DATE', i.value); }); }
   function validDate(p) { const st = Store.plan.settings; return p.date && p.date >= st.start && p.date <= st.end ? p.date : App.defaultDate(); }
+  const printBtn = (what, label) => `<button type="button" class="btn ghost noprint" data-print="${what}">${icon('print')}${label || 'Print / save PDF'}</button>`;
+  const monthName = m => `${D.MONTHS[+m.slice(5) - 1]} ${m.slice(0, 4)}`;
+  const winMonths = () => [...new Set(App.data.gen.dates.map(D.month))];
+  const pickMonth = p => { const ms = winMonths(); return ms.includes(p.m) ? p.m : (ms.includes(D.month(App.defaultDate())) ? D.month(App.defaultDate()) : ms[0]); };
+  const monthTabs = (view, cur, extra) => `<nav class="tabs plain noprint">${winMonths().map(m => `<a href="${link(view, Object.assign({}, extra || {}, { m }))}" class="${m === cur ? 'on' : ''}">${monthName(m)}</a>`).join('')}</nav>`;
+  const entryText = e => e.noTime ? 'No free slot' : Engine.partsText(e.parts);
+  /* Every date written out: "2, 3, 4, 5 Nov" (several months: "30 Nov; 1, 2 Dec") */
+  function listDates(ds) {
+    const by = {}; ds.slice().sort().forEach(d => { const m = d.slice(0, 7); (by[m] = by[m] || []).push(D.day(d)); });
+    return Object.keys(by).map(m => `${by[m].join(', ')} ${D.MONTHS[+m.slice(5) - 1].slice(0, 3)}`).join('; ');
+  }
+  App.listDates = listDates;
+  function expired(date, pid) { const keep = Number(Store.plan.settings.retentionDays) || 0; return keep && !App.isB(pid) && date < D.add(D.today(), -keep); }
 
-  /* A person's day. Upcoming days: grouped by Slot 1 / Slot 2. Past days: grey, read only, one remark per work. */
+  /* ---------- a person's day ---------- */
   function dayList(date, pid, opts) {
     const rows = App.dayRows(date, pid);
     if (expired(date, pid)) return `<p class="free">Record deleted (older than ${Store.plan.settings.retentionDays} days)</p>`;
@@ -41,53 +60,55 @@
       const firstRow = !seen.has(r.o.key); seen.add(r.o.key);
       const extras = firstRow && r.o.type !== 'review' ? `${App.impControl(r.o.key, pid)}${r.o.type !== 'meeting' ? App.clearBox(r.o.key, pid, date) : ''}` : '';
       out.push(`<li class="${clash ? 'clash' : ''} ${r.noTime ? 'notime' : ''} ${r.o.carried ? 'carried' : ''}" style="--c:${ty.color}">
-          <span class="tm">${r.noTime ? 'No free slot' : `${T.s(r.a)}–${T.s(r.b)}`}</span><button type="button" class="link" data-occ="${esc(r.o.key)}" draggable="true" data-from="${esc(pid)}">${esc(App.personLabel(r.o, pid))}${r.o.carried ? ` <small class="muted">(from leave ${D.nice(r.o.carriedFrom, { short: true })})</small>` : ''}</button>${r.o.status === 'done' ? '<span class="ok">Done</span>' : ''}${extras ? `<span class="row-x">${extras}</span>` : ''}</li>`);
+          <span class="tm">${r.noTime ? 'No free slot' : `${T.s(r.a)}–${T.s(r.b)}`}</span><button type="button" class="link" data-occ="${esc(r.o.key)}" ${App.editing ? `draggable="true" data-from="${esc(pid)}"` : ''}>${esc(App.personLabel(r.o, pid))}${r.o.carried ? ` <small class="muted">(from leave ${D.nice(r.o.carriedFrom, { short: true })})</small>` : ''}</button>${r.o.status === 'done' ? '<span class="ok">Done</span>' : ''}${extras ? `<span class="row-x">${extras}</span>` : ''}</li>`);
     });
     return `<ul class="day">${out.join('')}</ul>`;
   }
   function remarkControls(k) {
     const r = Store.plan.remarks[k] || {};
+    if (!App.editing) return r.s || r.t ? `<div class="rmk-ro">${r.s ? `<b>${esc(App.REMARK_LABELS[r.s])}</b>` : ''}${r.t ? ` ${esc(r.t)}` : ''}</div>` : '';
     return `<div class="rmk"><select data-rs="${esc(k)}" aria-label="Status"><option value="">Status…</option>${Object.keys(App.REMARK_LABELS).map(x => `<option value="${x}" ${r.s === x ? 'selected' : ''}>${App.REMARK_LABELS[x]}</option>`).join('')}</select>
       <input data-rt="${esc(k)}" value="${esc(r.t || '')}" placeholder="Remarks: what was done"></div>`;
-  }
-  function expired(date, pid) {
-    const keep = Number(Store.plan.settings.retentionDays) || 0;
-    return keep && !App.isB(pid) && date < D.add(D.today(), -keep);
-  }
-  function printBtn(what, label) { return `<button type="button" class="btn ghost noprint" data-print="${what}">${icon('print')}${label || 'Print / save PDF'}</button>`; }
-  function pointsStrip() {
-    const plan = Store.plan;
-    return `<div class="points">${plan.people.filter(x => !App.isB(x.id)).map(x => `<a href="#/people?id=${encodeURIComponent(x.id)}" class="pt-chip" style="--pc:${x.color}">${App.avatar(x.id, 'sm')}<b>${App.points(x.id)}</b><span>points</span></a>`).join('')}</div>`;
   }
   function pastList(date, pid, rows, opts) {
     const seen = new Set(), entries = [];
     rows.forEach(r => { if (!seen.has(r.o.key)) { seen.add(r.o.key); entries.push(r.e); } });
     const items = entries.map(e => `<li class="past ${(Store.plan.remarks[e.key + '|' + pid] || {}).s || ''}"><span class="tm">${e.noTime ? 'No free slot' : esc(Engine.partsText(e.parts))}</span><span class="pt-l">${esc(App.personLabel(e.o, pid))}</span>${e.o.type !== 'review' ? `<span class="row-x">${App.impControl(e.key, pid)}${e.o.type !== 'meeting' ? App.clearBox(e.key, pid, date) : ''}</span>` : ''}${remarkControls(e.key + '|' + pid)}</li>`).join('');
-    const dayK = `day@${date}|${pid}`;
-    if (!entries.length && opts && opts.noDayRemark) return `<p class="free">${opts && opts.free ? opts.free : 'Nothing planned'}</p>`;
     return `<ul class="day pastday">${items || `<li class="past"><span class="free">${opts && opts.free ? opts.free : 'Nothing planned'}</span></li>`}
-      <li class="past dayrmk"><span class="tm">Day remark</span>${remarkControls(dayK)}</li></ul>`;
+      ${App.editing || remarkControls(`day@${date}|${pid}`) ? `<li class="past dayrmk"><span class="tm">Day remark</span>${remarkControls(`day@${date}|${pid}`)}</li>` : ''}</ul>`;
+  }
+  function pointsStrip() {
+    return `<div class="points">${Store.plan.people.filter(x => !App.isB(x.id)).map(x => `<a href="#/employees?id=${encodeURIComponent(x.id)}" class="pt-chip" style="--pc:${x.color}">${App.avatar(x.id, 'sm')}<b>${App.points(x.id)}</b><span>points</span></a>`).join('')}</div>`;
+  }
+  function tripSwitch(pid, date) {
+    const r = App.outstationRuns(pid).find(x => x.days.includes(date)); if (!r) return '';
+    if (!App.editing) return '';
+    return `<label class="trip-sw"><span class="switch"><input type="checkbox" data-trip="${esc(r.runKey)}|${esc(pid)}" ${r.going ? 'checked' : ''}><span></span></span>Goes on the outstation trip (${esc(listDates(r.days))})</label>`;
   }
 
   /* ---------------- Today ---------------- */
   V.today = {
     title: 'Today',
+    desc: { what: 'Today: every employee\'s work for one day, slot by slot, with the day\'s meetings and B\'s daily check.',
+      why: 'To see at a glance where each person is (office, site, outstation, leave) and what they do in Slot 1 and Slot 2. Pick any day with the arrows.',
+      edit: 'Leave, clearance forms, 7-day targets, importance and remarks are filled in under Edit → Daily entries.' },
     render(p) {
       const plan = Store.plan, data = App.data, date = validDate(p), dt = D.parse(date);
-      const hol = data.gen.hol[date], past = App.isPast(date);
+      const hol = data.gen.hol[date], past = App.isPast(date), ed = App.editing;
       const clashes = data.iss.filter(i => i.level === 'clash' && i.date === date);
       const meetings = (data.byDate[date] || []).filter(o => o.type === 'meeting');
       const cards = plan.people.map(person => {
         const w = App.whereLabel(date, person.id);
         const off = !hol && Engine.personOff(plan, person.id, date) && !(data.gen.sched[person.id + '|' + date] || []).length;
-        const leave = App.onLeave(person.id, date), canLeave = !App.isB(person.id) && !past && !hol && !off && !(D.dow(date) === 0 && !(data.gen.sched[person.id + '|' + date] || []).length);
+        const leave = App.onLeave(person.id, date), canLeave = ed && !App.isB(person.id) && !past && !hol && !off && !(D.dow(date) === 0 && !(data.gen.sched[person.id + '|' + date] || []).length);
         const tg = date === D.today() && !App.isB(person.id) ? App.openTargets(person.id) : [];
-        return `<article class="card person ${past ? 'past' : ''}" style="--pc:${person.color}" ${past ? '' : `data-drop="${date}" data-person="${esc(person.id)}"`}>
-          <header>${App.avatar(person.id, 'lg')}<div><a href="#/people?id=${encodeURIComponent(person.id)}" class="name">${esc(person.name)}</a><span class="where w-${w.k}">${esc(w.text)}</span></div></header>
+        return `<article class="card person ${past ? 'past' : ''}" style="--pc:${person.color}" ${ed && !past ? `data-drop="${date}" data-person="${esc(person.id)}"` : ''}>
+          <header>${App.avatar(person.id, 'lg')}<div><a href="#/employees?id=${encodeURIComponent(person.id)}" class="name">${esc(person.name)}</a><span class="where w-${w.k}">${esc(w.text)}</span></div></header>
           ${hol ? '<p class="free">Holiday</p>' : off && !past ? '<p class="free">Weekly day off (personal work)</p>' : dayList(date, person.id, { free: off ? 'Weekly day off' : 'Free all day' })}
+          ${!past ? tripSwitch(person.id, date) : ''}
           ${tg.length ? `<div class="tgts"><h3>Site measurement target</h3>${tg.map(v => App.targetRow(v)).join('')}</div>` : ''}
-          <div class="card-foot noprint">${!hol && !past && !leave ? `<button type="button" class="add-small" data-add="${date}" data-person="${esc(person.id)}">${icon('plus')}Add</button>` : ''}
-          ${canLeave ? `<button type="button" class="add-small leave-btn ${leave ? 'on' : ''}" data-leave="${esc(person.id)}|${date}|${leave ? '0' : '1'}">${leave ? 'Cancel leave' : 'On leave'}</button>` : ''}</div></article>`;
+          ${ed ? `<div class="card-foot noprint">${!hol && !past && !leave ? `<button type="button" class="add-small" data-add="${date}" data-person="${esc(person.id)}">${icon('plus')}Add work</button>` : ''}
+          ${canLeave ? `<button type="button" class="add-small leave-btn ${leave ? 'on' : ''}" data-leave="${esc(person.id)}|${date}|${leave ? '0' : '1'}">${leave ? 'Cancel leave' : 'On leave'}</button>` : ''}</div>` : ''}</article>`;
       }).join('');
       const meet = meetings.map(m => {
         const t = App.task(m.taskId) || {}; let cur = T.m(m.start);
@@ -101,20 +122,28 @@
         </header>
         ${pointsStrip()}
         ${hol ? `<p class="banner">Holiday: ${esc(hol)}</p>` : ''}
-        ${past ? `<p class="banner past-b">This day is over. The timetable is read only; write the status and remarks of each work below.</p>` : ''}
-        ${clashes.length ? `<p class="banner warn">${clashes.length === 1 ? 'One person is' : clashes.length + ' bookings are'} double-booked today. ${clashes.map(c => esc(c.text)).join(' ')}</p>` : ''}
+        ${past ? `<p class="banner past-b">This day is over. The timetable is read only${ed ? '; write the status and remarks of each work below' : ''}.</p>` : ''}
+        ${clashes.length ? `<p class="banner warn">${clashes.length === 1 ? 'One person is' : clashes.length + ' bookings are'} double-booked. ${clashes.map(c => esc(c.text)).join(' ')}</p>` : ''}
         <div class="people-grid">${cards}</div>
         ${meet ? `<div class="grid2">${meet}</div>` : ''}
         ${!hol ? reviewCard(date) : ''}
       </section>`;
     },
-    mount(root, p) { bindNav(root); bindReview(root, validDate(p)); }
+    mount(root, p) {
+      bindNav(root);
+      const date = validDate(p);
+      $$('[data-rv]', root).forEach(c => c.onchange = () => {
+        const r = Store.plan.reviews; r.days = r.days || {}; const b = (r.days[date] = r.days[date] || {});
+        if (c.checked) b[c.dataset.rv] = true; else delete b[c.dataset.rv];
+        Store.save(true); App.keepScroll = true; App.render();
+      });
+      $$('[data-trip]', root).forEach(c => c.onchange = () => { const [rk, pid] = c.dataset.trip.split('|'); App.setAway(rk, pid, c.checked); });
+    }
   };
 
-  /* B's daily check, shown on Today */
   function reviewItems(date) {
     const plan = Store.plan, items = [];
-    plan.people.filter(x => x.id !== 'B').forEach(person => {
+    plan.people.filter(x => !App.isB(x.id)).forEach(person => {
       (App.data.byDate[date] || []).filter(o => o.people.includes(person.id) && o.type !== 'review').forEach(o => {
         const vs = o.siteGroup ? App.visitsFor(o, person.id) : [];
         if (vs.length) vs.forEach(v => items.push({ id: `${person.id}|${v.key}`, pid: person.id, text: `Measurement sheet of ${App.cname(v.company)} received` }));
@@ -131,82 +160,96 @@
     const n = items.filter(i => done[i.id]).length;
     return `<article class="card review"><h2>B's daily check <span class="count">${n} of ${items.length}</span></h2>
       <div class="bar"><span style="width:${items.length ? n / items.length * 100 : 0}%"></span></div>
-      <ul class="checks">${items.map(i => `<li><label class="check">${App.avatar(i.pid, 'sm')}<input type="checkbox" data-rv="${esc(i.id)}" ${done[i.id] ? 'checked' : ''}><span>${esc(i.text)}</span></label></li>`).join('')}</ul></article>`;
-  }
-  function bindReview(root, date) {
-    $$('[data-rv]', root).forEach(c => c.onchange = () => {
-      const r = Store.plan.reviews; r.days = r.days || {}; const b = (r.days[date] = r.days[date] || {});
-      if (c.checked) b[c.dataset.rv] = true; else delete b[c.dataset.rv];
-      Store.save(true); App.keepScroll = true; App.render();
-    });
+      <ul class="checks">${items.map(i => `<li><label class="check">${App.avatar(i.pid, 'sm')}${App.editing ? `<input type="checkbox" data-rv="${esc(i.id)}" ${done[i.id] ? 'checked' : ''}>` : `<span class="ro-box ${done[i.id] ? 'on' : ''}">${done[i.id] ? '✓' : ''}</span>`}<span class="${done[i.id] ? 'struck' : ''}">${esc(i.text)}</span></label></li>`).join('')}</ul></article>`;
   }
 
   /* ---------------- Week ---------------- */
   V.week = {
     title: 'Week',
+    desc: { what: 'Week: everyone against the seven days of one week.',
+      why: 'To compare people side by side and spot clashes, leave, days off and outstation trips in the week.',
+      edit: 'To move work to another day or hand it to another person, use Edit → Week board.' },
     render(p) {
-      const plan = Store.plan, st = plan.settings, data = App.data;
+      const plan = Store.plan, st = plan.settings, data = App.data, ed = App.editing;
       const ws = D.weekStart(p.w || validDate(p));
       const days = D.range(ws, D.add(ws, 6));
       const prev = D.add(ws, -7), next = D.add(ws, 7);
-      const head = days.map(d => `<th class="${data.gen.hol[d] ? 'hol' : ''} ${d === D.today() ? 'now' : ''} ${App.isPast(d) ? 'past' : ''}"><a href="#/today?date=${d}">${D.DAYS[D.dow(d)].slice(0, 3)} <b>${D.day(d)}</b></a>${data.gen.hol[d] ? `<small>${esc(data.gen.hol[d])}</small>` : ''}</th>`).join('');
+      const head = days.map(d => `<th class="${data.gen.hol[d] ? 'hol' : ''} ${d === D.today() ? 'now' : ''} ${App.isPast(d) ? 'past' : ''}"><a href="#/today?date=${d}">${D.DAYS[D.dow(d)].slice(0, 3)} <b>${D.day(d)}</b> ${D.MONTHS[D.parse(d).getUTCMonth()].slice(0, 3)}</a>${data.gen.hol[d] ? `<small>${esc(data.gen.hol[d])}</small>` : ''}</th>`).join('');
       const rows = plan.people.map(person => `<tr><th class="rowhead">${App.who(person.id)}</th>${days.map(d => {
         const inWin = d >= st.start && d <= st.end, past = App.isPast(d);
         const list = inWin ? (data.gen.sched[person.id + '|' + d] || []).filter(e => e.o.type !== 'review').map(e => e.o) : [];
         const off = inWin && !list.length && Engine.personOff(plan, person.id, d) && !data.gen.hol[d];
-        return `<td class="${data.gen.hol[d] ? 'hol' : ''} ${inWin ? '' : 'out'} ${past ? 'past' : ''} ${data.clashPD.has(person.id + '|' + d) ? 'clash' : ''}" ${inWin && !past ? `data-drop="${d}" data-person="${esc(person.id)}"` : ''}>${off ? '<span class="offday">Day off</span>' : ''}${inWin && App.onLeave(person.id, d) ? '<span class="offday leave">On leave</span>' : ''}${list.map(o => App.pill(o, person.id)).join('')}</td>`;
+        return `<td class="${data.gen.hol[d] ? 'hol' : ''} ${inWin ? '' : 'out'} ${past ? 'past' : ''} ${data.clashPD.has(person.id + '|' + d) ? 'clash' : ''}" ${ed && inWin && !past ? `data-drop="${d}" data-person="${esc(person.id)}"` : ''}>${off ? '<span class="offday">Day off</span>' : ''}${inWin && App.onLeave(person.id, d) ? '<span class="offday leave">On leave</span>' : ''}${list.map(o => App.pill(o, person.id)).join('')}</td>`;
       }).join('')}</tr>`).join('');
       return `<section>
-        <header class="head"><h1>Week of ${D.nice(ws, { short: true })}</h1>${printBtn('week')}
-          <div class="nav-date"><button type="button" class="round" ${D.add(ws, 6) < st.start ? '' : ''} ${prev < D.weekStart(st.start) ? 'disabled' : ''} data-gov="week?w=${prev}" aria-label="Previous week">${icon('left')}</button>
-          <button type="button" class="btn ghost" data-gov="week?w=${D.weekStart(App.defaultDate())}">This week</button>
-          <button type="button" class="round" ${next > st.end ? 'disabled' : ''} data-gov="week?w=${next}" aria-label="Next week">${icon('right')}</button></div></header>
-        <p class="hint">Drag work to another day to move it, or onto another person on the same day to hand it over. Work is fitted into ${esc(App.slotsText())}; meetings are before 10:30. Past days are grey and closed.</p>
+        <header class="head"><h1>${ed ? 'Week board' : 'Week'}: ${listDates(days)} ${ws.slice(0, 4)}</h1>
+          <div class="acts"><div class="nav-date noprint"><a class="round ${prev < D.weekStart(st.start) ? 'off' : ''}" href="${link('week', { w: prev })}" aria-label="Previous week">${icon('left')}</a>
+          <a class="btn ghost" href="${link('week', { w: D.weekStart(App.defaultDate()) })}">This week</a>
+          <a class="round ${next > st.end ? 'off' : ''}" href="${link('week', { w: next })}" aria-label="Next week">${icon('right')}</a></div>${printBtn('week')}</div></header>
+        ${ed ? `<p class="hint">Drag work to another day to move it, or onto another person on the same day to hand it over. Click work to change its time or people. Work is fitted into ${esc(App.slotsText())}; meetings are before ${esc(T.s(App.data.gen.slots[0][0]))}.</p>` : ''}
         <div class="scroll"><table class="week"><thead><tr><th></th>${head}</tr></thead><tbody>${rows}</tbody></table></div>
         <ul class="key">${Object.keys(App.TYPES).filter(k => k !== 'review').map(k => `<li><span style="background:${App.TYPES[k].color}"></span>${App.TYPES[k].label}</li>`).join('')}</ul>
       </section>`;
-    },
-    mount(root) { bindNav(root); }
+    }
   };
 
-  /* ---------------- People ---------------- */
-  V.people = {
-    title: 'People',
+  /* ---------------- Month ---------------- */
+  V.month = {
+    title: 'Month',
+    desc: { what: 'Month: everyone\'s work for the whole month, one row for every day.',
+      why: 'The monthly schedule to review or print: which company each person measures on each day, office work, importance and clearance forms (✓CF).' },
     render(p) {
-      const plan = Store.plan, data = App.data, cap = data.stats.cap;
+      const plan = Store.plan, data = App.data, m = pickMonth(p);
+      const dates = data.gen.dates.filter(d => D.month(d) === m);
+      const head = plan.people.map(x => `<th>${App.who(x.id)}</th>`).join('');
+      const rows = dates.map(d => {
+        const hol = data.gen.hol[d], past = App.isPast(d);
+        const cells = plan.people.map(x => {
+          if (hol) return `<td class="hol"><span class="offday">${esc(hol)}</span></td>`;
+          if (App.onLeave(x.id, d)) return '<td><span class="offday leave">On leave</span></td>';
+          const list = (data.gen.sched[x.id + '|' + d] || []).filter(e => e.o.type !== 'review');
+          if (!list.length) return `<td><span class="offday">${Engine.personOff(plan, x.id, d) ? 'Day off' : D.dow(d) === 0 ? 'Sunday' : 'Free'}</span></td>`;
+          return `<td>${list.map(e => { const ty = App.TYPES[e.o.type] || App.TYPES.office; return `<div class="mline" style="--c:${ty.color}"><span class="tm">${esc(entryText(e))}</span> ${esc(App.personLabel(e.o, x.id))} ${App.impBadge(App.imp(e.o.key, x.id))}${!App.isB(x.id) && Store.plan.clear[e.o.key + '|' + x.id] ? ' <span class="clr-mini" title="Clearance form done">✓CF</span>' : ''}</div>`; }).join('')}</td>`;
+        }).join('');
+        return `<tr class="${past ? 'past' : ''} ${hol ? 'hol' : ''}"><th class="rowhead"><a href="#/today?date=${d}"><b>${D.day(d)}</b> ${D.DAYS[D.dow(d)].slice(0, 3)}</a></th>${cells}</tr>`;
+      }).join('');
+      return `<section><header class="head"><h1>Monthly schedule: ${monthName(m)}</h1>${printBtn('month')}</header>
+        ${monthTabs('month', m)}
+        <div class="scroll"><table class="week month"><thead><tr><th>Date</th>${head}</tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    }
+  };
+
+  /* ---------------- Employees ---------------- */
+  V.employees = {
+    title: 'Employees',
+    desc: { what: 'Employees: one person\'s companies, outstation trips, 7-day targets and points, and every day of the timetable.',
+      why: 'The personal schedule of N, R, S, P/P1 or B, to check, print as PDF or add to a phone calendar.' },
+    render(p) {
+      const plan = Store.plan, data = App.data;
       const person = App.person(p.id) || plan.people[0];
       const s = data.stats.per[person.id];
-      const weeks = [...new Set(data.gen.dates.map(D.weekStart))], months = [...new Set(data.gen.dates.map(D.month))];
-      const sumBy = f => Object.keys(s.byDate).filter(f).reduce((a, d) => a + s.byDate[d], 0);
       const trips = App.outstationRuns(person.id);
       const r = plan.responsibilities[person.id] || {};
       const comps = gk => (r[gk] || []).map(c => esc(App.cname(c))).join(', ') || '–';
       return `<section style="--pc:${person.color}">
-        <nav class="tabs">${plan.people.map(x => `<a href="#/people?id=${encodeURIComponent(x.id)}" class="${x.id === person.id ? 'on' : ''}" style="--pc:${x.color}">${App.avatar(x.id, 'sm')}${esc(x.name)}</a>`).join('')}</nav>
-        <header class="head"><div><h1>${esc(person.name)}</h1><p class="muted">${esc(person.role || '')}</p></div>
-          <div class="acts"><button type="button" class="btn ghost" id="ics">${icon('calendar')}Add to phone calendar</button>${printBtn('person')}</div></header>
-        <div class="stats"><div><b>${T.hrs(s.booked)}</b><span>hours in this timetable</span></div><div><b>${s.daysWorked}</b><span>days with work</span></div><div><b>${s.visits}</b><span>company site days</span></div>${App.isB(person.id) ? '' : `<div><b>${App.points(person.id)}</b><span>points (site work done in time)</span></div>`}</div>
-        <div class="grid2">
-          <article class="card"><h2>Hours</h2><table class="tbl"><thead><tr><th>Week</th><th>Hours</th></tr></thead><tbody>
-            ${weeks.map(w => `<tr><td>${D.nice(w, { short: true })} – ${D.nice(D.add(w, 6), { short: true })}</td><td>${T.hrs(sumBy(d => D.weekStart(d) === w))}</td></tr>`).join('')}</tbody>
-            <tfoot>${months.map(m => `<tr><th>${D.MONTHS[+m.slice(5) - 1]}</th><td>${T.hrs(sumBy(d => D.month(d) === m))}</td></tr>`).join('')}<tr><th>Total</th><td>${T.hrs(s.booked)}</td></tr></tfoot></table>
-            <p class="muted small">A full office day is ${T.hrs(cap)} hours in two slots (${esc(App.slotsText())}), plus any meeting.${(person.offDays || []).length ? ` Weekly day off: ${person.offDays.map(x => D.DAYS[x]).join(' and ')}.` : ''}</p></article>
-          <article class="card"><h2>Companies</h2><dl class="dl"><dt>Main contractors</dt><dd>${comps('main')}</dd><dt>Outstation sites</dt><dd>${comps('outstation')}</dd><dt>Other contractors</dt><dd>${comps('other')}</dd>${r.duties ? `<dt>Other duties</dt><dd>${esc(r.duties)}</dd>` : ''}</dl>
-            ${trips.length ? `<h2 class="mt">Outstation trips</h2><ul class="trips">${trips.map(tr => `<li><label class="switch"><input type="checkbox" data-trip="${esc(tr.runKey)}" ${tr.going ? 'checked' : ''}><span></span></label><div><b>${D.nice(tr.days[0], { short: true })} – ${D.nice(tr.days[tr.days.length - 1], { short: true })}</b><small>${tr.going ? 'Going outstation. Skips meetings on these days.' : 'Staying in town.'}</small></div></li>`).join('')}</ul>` : ''}</article>
-        </div>
+        <nav class="tabs noprint">${plan.people.map(x => `<a href="#/employees?id=${encodeURIComponent(x.id)}" class="${x.id === person.id ? 'on' : ''}" style="--pc:${x.color}">${App.avatar(x.id, 'sm')}${esc(x.name)}</a>`).join('')}</nav>
+        <header class="head"><div><h1>${esc(person.name)}</h1><p class="muted">${esc(person.role || '')}${(person.offDays || []).length ? ` · Weekly day off: ${person.offDays.map(x => D.DAYS[x]).join(' and ')}` : ''}</p></div>
+          <div class="acts noprint"><button type="button" class="btn ghost" id="ics">${icon('calendar')}Add to phone calendar</button>${printBtn('person')}</div></header>
+        <div class="stats"><div><b>${s.daysWorked}</b><span>days with work</span></div><div><b>${s.visits}</b><span>company site days</span></div>${App.isB(person.id) ? '' : `<div><b>${App.points(person.id)}</b><span>points (site work done in time)</span></div>`}</div>
+        <article class="card"><h2>Companies</h2><dl class="dl"><dt>Main contractors</dt><dd>${comps('main')}</dd><dt>Outstation sites</dt><dd>${comps('outstation')}</dd><dt>Other contractors</dt><dd>${comps('other')}</dd>${r.duties ? `<dt>Other duties</dt><dd>${esc(r.duties)}</dd>` : ''}</dl>
+          ${trips.length ? `<h2 class="mt">Outstation trips</h2><ul class="trips">${trips.map(tr => `<li><span class="trip-dot ${tr.going ? 'on' : ''}"></span><div><b>${esc(listDates(tr.days))}</b><small>${tr.going ? 'Going outstation. Skips meetings on these days.' : 'Staying in town.'}</small></div></li>`).join('')}</ul>` : ''}</article>
         ${App.isB(person.id) ? '' : targetsCard(person.id)}
         <article class="card"><h2>Day by day</h2><div class="days-list">${data.gen.dates.map(d => {
           const hol = data.gen.hol[d]; const rows = App.dayRows(d, person.id);
           const off = Engine.personOff(plan, person.id, d);
-          if (!rows.length && (hol || D.dow(d) === 0 || off)) return `<div class="dl-row off"><div class="dd"><b>${D.day(d)}</b>${D.DAYS[D.dow(d)].slice(0, 3)}</div><p class="free">${esc(hol || (off ? 'Weekly day off' : 'Sunday'))}</p></div>`;
-          return `<div class="dl-row ${App.isPast(d) ? 'past' : ''} ${data.clashPD.has(person.id + '|' + d) ? 'clash' : ''}"><div class="dd"><b>${D.day(d)}</b>${D.DAYS[D.dow(d)].slice(0, 3)} ${D.MONTHS[D.parse(d).getUTCMonth()].slice(0, 3)}</div>${dayList(d, person.id, { free: 'Free' })}<div class="hh">${s.byDate[d] ? T.hrs(s.byDate[d]) + ' h' : ''}</div></div>`;
+          if (!rows.length && (hol || D.dow(d) === 0 || off) && !App.onLeave(person.id, d)) return `<div class="dl-row off"><div class="dd"><b>${D.day(d)}</b>${D.DAYS[D.dow(d)].slice(0, 3)} ${D.MONTHS[D.parse(d).getUTCMonth()].slice(0, 3)}</div><p class="free">${esc(hol || (off ? 'Weekly day off' : 'Sunday'))}</p></div>`;
+          return `<div class="dl-row ${App.isPast(d) ? 'past' : ''} ${data.clashPD.has(person.id + '|' + d) ? 'clash' : ''}"><div class="dd"><b>${D.day(d)}</b>${D.DAYS[D.dow(d)].slice(0, 3)} ${D.MONTHS[D.parse(d).getUTCMonth()].slice(0, 3)}</div>${dayList(d, person.id, { free: 'Free' })}</div>`;
         }).join('')}</div></article>
       </section>`;
     },
     mount(root, p) {
       const person = App.person(p.id) || Store.plan.people[0];
-      $$('[data-trip]', root).forEach(c => c.onchange = () => App.setAway(c.dataset.trip, person.id, c.checked));
-      $('#ics', root).onclick = () => {
+      const b = $('#ics', root); if (b) b.onclick = () => {
         const evs = [];
         Object.keys(App.data.gen.sched).filter(k => k.startsWith(person.id + '|')).forEach(k => App.data.gen.sched[k].forEach(e => e.parts.forEach((pt, i) =>
           evs.push({ uid: e.key.replace(/[^a-z0-9]/gi, '') + person.id + i, date: e.date, start: T.s(pt[0]), end: T.s(pt[1]), title: App.personLabel(e.o, person.id), desc: e.o.details }))));
@@ -215,46 +258,110 @@
       };
     }
   };
-
   function targetsCard(pid) {
     const vs = App.data.gen.visits.filter(v => v.person === pid && !v.repeat).sort((a, b) => a.date < b.date ? -1 : 1);
     if (!vs.length) return '';
     const st = Store.plan.settings;
     return `<article class="card"><h2>Site measurement targets <span class="count">${App.points(pid)} points</span></h2>
-      <p class="muted small">Each site measurement must be done within ${st.targetDays || 7} days from the start of the run. Tick it when done in time; the tick box is there for ${st.targetDays || 7} days and then disappears. One tick = ${st.targetPoints || 100} points.</p>
+      <p class="muted small">Each site measurement must be done within ${st.targetDays || 7} days from the start of the run. The tick box (in Edit → Daily entries) is there for ${st.targetDays || 7} days and then disappears. One tick = ${st.targetPoints || 100} points.</p>
       <div class="tgt-list">${vs.map(v => `<div class="tgt-row"><span class="dd"><b>${D.day(v.date)}</b>${D.MONTHS[D.parse(v.date).getUTCMonth()].slice(0, 3)}</span>${App.targetRow(v)}</div>`).join('')}</div></article>`;
   }
 
   /* ---------------- Companies ---------------- */
   V.companies = {
     title: 'Companies',
+    desc: { what: 'Companies: the three groups (main contractors, outstation sites, other contractors), who measures each one, and its site days.',
+      why: 'To check that every company gets its site days in its own part of the month. Click a company name for its monthly schedule with importance and 6 pm follow-up points.',
+      edit: 'Site days are moved in Edit → Company schedules; who measures what is set in Edit → Who does which company.' },
     render() {
-      const plan = Store.plan, data = App.data;
+      const plan = Store.plan, data = App.data, ed = App.editing;
       const owners = c => plan.people.filter(x => ((plan.responsibilities[x.id] || {})[c.group] || []).includes(c.id));
       return `<section><header class="head"><h1>Companies</h1></header>
-        <p class="hint">Every company has its own site days. Click a date to change it, or a company name for its monthly schedule with importance and 6 pm follow-up points.</p>
-        ${Object.keys(App.GROUPS).map(gk => `<h2 class="group">${App.GROUPS[gk]}</h2><div class="comp-grid">${plan.companies.filter(c => c.group === gk).map(c => {
+        ${Object.keys(App.GROUPS).map(gk => { const wd = Engine.windowDays(plan, gk); return `<h2 class="group">${App.GROUPS[gk]}<span class="grp-days">${wd ? 'days ' + wd.join(', ') : ''}</span></h2><div class="comp-grid">${plan.companies.filter(c => c.group === gk).map(c => {
           const vs = data.gen.visits.filter(v => v.company === c.id).sort((a, b) => a.date < b.date ? -1 : 1);
           const ow = owners(c);
-          return `<article class="card comp"><h3><a href="#/company?id=${encodeURIComponent(c.id)}">${esc(c.name)}</a></h3><p class="muted small">${ow.length ? ow.map(x => esc(x.name)).join(' and ') : 'Nobody assigned'}${c.together && ow.length > 1 ? ', together on the same day' : ow.length > 1 ? ', on separate days' : ''}</p>
-            <div class="chips">${vs.map(v => App.isPast(v.date) ? `<span class="dchip past" style="--pc:${App.pcolor(v.person)}">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</span>` : `<button type="button" class="dchip" data-visit="${esc(v.key)}" style="--pc:${App.pcolor(v.person)}">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</button>`).join('') || '<span class="muted small">No site day in this timetable</span>'}</div></article>`;
-        }).join('')}</div>`).join('')}</section>`;
+          return `<article class="card comp"><h3><a href="${ed ? link('company', { id: c.id }) : `#/company?id=${encodeURIComponent(c.id)}`}">${esc(c.name)}</a></h3><p class="muted small">${ow.length ? ow.map(x => esc(x.name)).join(' and ') : 'Nobody assigned'}${c.together && ow.length > 1 ? ', together on the same day' : ow.length > 1 ? ', on separate days' : ''}</p>
+            <div class="chips">${vs.map(v => !ed || App.isPast(v.date) ? `<span class="dchip ${App.isPast(v.date) ? 'past' : ''}" style="--pc:${App.pcolor(v.person)}">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</span>` : `<button type="button" class="dchip" data-visit="${esc(v.key)}" style="--pc:${App.pcolor(v.person)}">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</button>`).join('') || '<span class="muted small">No site day in this timetable</span>'}</div></article>`;
+        }).join('')}</div>`; }).join('')}</section>`;
+    }
+  };
+
+  /* ---------------- Company monthly schedule ---------------- */
+  function companyEntries(cid, dates) {
+    const data = App.data, plan = Store.plan, set = new Set(dates), out = [];
+    data.gen.visits.filter(v => v.company === cid && set.has(v.date)).forEach(v => {
+      const e = (data.gen.sched[v.person + '|' + v.date] || []).find(x => x.o.runKey === v.runKey);
+      out.push({ date: v.date, time: e ? entryText(e) : '', sort: e && e.parts.length ? e.parts[0][0] : 9999, work: `Site measurement ${v.cycle || ''}${v.repeat ? ' (continued)' : ''}`.trim(), type: e ? e.o.type : 'site', people: [v.person], key: e ? e.o.key : null, visit: v.key });
+    });
+    data.gen.occs.filter(o => set.has(o.date) && !o.siteGroup && o.type !== 'review' && (o.companies || []).includes(cid)).forEach(o => {
+      let time = App.timeText(o, o.people[0]), sort = T.m(o.start);
+      if (o.type === 'billing' || o.type === 'advance') { const r = Engine.slotPlan(plan, o, [], data.gen).find(x => x.company === cid); if (r) { time = r.text; sort = r.segs.length ? r.segs[0][0] : sort; } }
+      out.push({ date: o.date, time, sort, work: o.title, type: o.type, people: o.people.slice(), key: o.key });
+    });
+    return out.sort((a, b) => a.date === b.date ? a.sort - b.sort : (a.date < b.date ? -1 : 1));
+  }
+  V.company = {
+    title: 'Company schedule',
+    desc: { what: 'Company schedule: one company\'s timetable for a month, every day listed, with importance and the 6 pm follow-up points.',
+      why: 'To plan and review the work of one company, and print it as PDF.',
+      edit: 'Follow-up points, importance and site days are filled in under Edit → Company schedules.' },
+    render(p) {
+      const plan = Store.plan, data = App.data, m = pickMonth(p), ed = App.editing;
+      const c = plan.companies.find(x => x.id === p.id) || plan.companies[0];
+      const dates = data.gen.dates.filter(d => D.month(d) === m);
+      const ents = companyEntries(c.id, dates), fu = plan.followups;
+      const owners = plan.people.filter(x => ((plan.responsibilities[x.id] || {})[c.group] || []).includes(c.id));
+      const rows = dates.map(d => {
+        const list = ents.filter(e => e.date === d), past = App.isPast(d), hol = data.gen.hol[d];
+        const k = c.id + '|' + d, rs = Math.max(1, list.length);
+        const fuCell = `<td class="fu" rowspan="${rs}">${ed ? `<textarea data-fu="${esc(k)}" rows="2" placeholder="6 pm follow-up points">${esc(fu[k] || '')}</textarea>` : `<div class="fu-ro">${esc(fu[k] || '')}</div>`}</td>`;
+        const dateCell = `<th class="rowhead" rowspan="${rs}"><b>${D.day(d)}</b> ${D.DAYS[D.dow(d)].slice(0, 3)}</th>`;
+        if (!list.length) return `<tr class="${past ? 'past' : ''} ${hol ? 'hol' : ''}">${dateCell}<td colspan="4" class="free">${hol ? esc(hol) : D.dow(d) === 0 ? 'Sunday' : 'No work planned'}</td>${fuCell}</tr>`;
+        return list.map((e, i) => {
+          const lv = e.key ? e.people.reduce((best, pid) => RANK[App.imp(e.key, pid)] > RANK[best] ? App.imp(e.key, pid) : best, '') : '';
+          const ty = App.TYPES[e.type] || App.TYPES.office;
+          const impCell = ed && e.key && !past ? `<select class="imp-sel ${lv ? App.IMP[lv].cls : ''}" data-impall="${esc(e.key)}|${esc(e.people.join(','))}" aria-label="Importance"><option value="">–</option>${Object.keys(App.IMP).map(x => `<option value="${x}" ${lv === x ? 'selected' : ''}>${App.IMP[x].label}</option>`).join('')}</select>` : (App.impBadge(lv) || '<span class="muted">–</span>');
+          const work = ed && e.visit && !past ? `<button type="button" class="link" data-visit="${esc(e.visit)}">${esc(e.work)}</button>` : esc(e.work);
+          return `<tr class="${past ? 'past' : ''}">${i === 0 ? dateCell : ''}<td class="tm">${esc(e.time)}</td><td><span class="dot" style="background:${ty.color}"></span> ${work}</td><td>${e.people.map(x => esc(App.pname(x))).join(', ') || '–'}</td><td>${impCell}</td>${i === 0 ? fuCell : ''}</tr>`;
+        }).join('');
+      }).join('');
+      const opts = Object.keys(App.GROUPS).map(gk => `<optgroup label="${App.GROUPS[gk]}">${plan.companies.filter(x => x.group === gk).map(x => `<option value="${esc(x.id)}" ${x.id === c.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('');
+      return `<section><header class="head"><div><h1>${esc(c.name)}: ${monthName(m)}</h1><p class="muted">${esc(App.GROUPS[c.group])}. ${owners.length ? 'Measured by ' + owners.map(x => esc(x.name)).join(' and ') : 'Nobody assigned'}.</p></div>
+          <div class="acts noprint"><select id="co-pick" class="pick-sel" aria-label="Company">${opts}</select>${printBtn('company')}</div></header>
+        ${monthTabs('company', m, { id: c.id })}
+        ${ed ? '<p class="hint">Click a site measurement to move it to another day of its run. Follow-up points are saved when you leave the box.</p>' : ''}
+        <div class="scroll"><table class="tbl co-tbl"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Who</th><th>Importance</th><th>6 pm follow-up points</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    },
+    mount(root, p) {
+      const pick = $('#co-pick', root); if (pick) pick.onchange = () => { location.hash = link('company', { id: pick.value, m: pickMonth(p) }); };
+      $$('[data-fu]', root).forEach(t => t.onchange = () => { const k = t.dataset.fu; if (t.value.trim()) Store.plan.followups[k] = t.value; else delete Store.plan.followups[k]; Store.save(true); toast('Follow-up saved.'); });
+      $$('[data-impall]', root).forEach(s => s.onchange = () => {
+        const raw = s.dataset.impall, i = raw.lastIndexOf('|'), key = raw.slice(0, i), ppl = raw.slice(i + 1).split(',').filter(Boolean);
+        App.keepScroll = true;
+        Store.change('Importance set', pl => ppl.forEach(pid => { if (s.value) pl.importance[key + '|' + pid] = s.value; else delete pl.importance[key + '|' + pid]; }));
+      });
     }
   };
 
   /* ---------------- Meetings ---------------- */
   V.meetings = {
     title: 'Meetings',
+    desc: { what: 'Meetings: the joint meetings with their dates, who attends and the agenda with minutes for each item.',
+      why: 'To come prepared: each item shows who is responsible. People who are out of station that day do not attend.',
+      edit: 'Agendas are changed in Edit → Meeting agendas.' },
     render() {
-      const plan = Store.plan, data = App.data;
-      return `<section><header class="head"><h1>Meetings</h1></header>
-        <p class="hint">People who are out of station that day do not attend. Tick one or more people for each agenda item.</p>
+      const plan = Store.plan, data = App.data, ed = App.editing;
+      return `<section><header class="head"><h1>${ed ? 'Meeting agendas' : 'Meetings'}</h1>${printBtn('meetings')}</header>
         <div class="grid2 meet-grid">${plan.tasks.filter(t => t.type === 'meeting').map(t => {
           const occs = data.gen.occs.filter(o => o.taskId === t.id);
           const slot = T.m(t.end) - T.m(t.start), ag = t.agenda || [], used = ag.reduce((s, a) => s + (Number(a.minutes) || 0), 0);
           let cur = T.m(t.start);
+          const when = occs.map(o => `${D.nice(o.date)}${o.away && o.away.length ? ` <span class="small">(away: ${o.away.map(x => esc(App.pname(x))).join(', ')})</span>` : ''}`).join(', ') || 'no day in this timetable';
+          if (!ed) return `<article class="card"><h2>${esc(t.title)}</h2><p class="muted">${t.start}–${t.end} on ${when}</p>
+            <ol class="agenda">${ag.map(a => { const s = T.s(cur); cur += Number(a.minutes) || 0; return `<li><span class="tm">${s}</span><span>${esc(a.item)} <small class="muted">${a.minutes} min</small></span><span class="avs">${(a.owners || []).map(o => App.avatar(o, 'sm')).join('')}</span></li>`; }).join('')}</ol>
+            <p class="small ${used > slot ? 'bad' : 'muted'}">${used} of ${slot} minutes</p></article>`;
           return `<article class="card meet" data-m="${esc(t.id)}"><h2>${esc(t.title)}</h2>
-            <p class="muted">${t.start}–${t.end} on ${occs.map(o => `${App.isPast(o.date) ? `<span class="muted">${D.nice(o.date)} (over)</span>` : `<button type="button" class="link" data-occ="${esc(o.key)}">${D.nice(o.date)}</button>`}${o.away && o.away.length ? ` <span class="small">(away: ${o.away.map(x => esc(App.pname(x))).join(', ')})</span>` : ''}`).join(', ') || 'no day in this timetable'}</p>
+            <p class="muted">${t.start}–${t.end} on ${when}</p>
             <div class="bar ${used > slot ? 'over' : ''}"><span style="width:${Math.min(100, used / slot * 100)}%"></span></div>
             <p class="small ${used > slot ? 'bad' : 'muted'}">${used} of ${slot} minutes${used > slot ? `: ${used - slot} too many` : ''}</p>
             <ol class="ag-edit">${ag.map((a, i) => { const s = T.s(cur); cur += Number(a.minutes) || 0; return `<li data-i="${i}">
@@ -292,21 +399,24 @@
     advance: ['Measurement checking', 'Rate check', 'Linking to PO file', 'Advances filling', 'Asset codes checking', 'Emailing'],
     billing: ['Bill checking', 'Rate check', 'Formatting', 'Advances', 'Asset codes', 'Tally billing by P1', 'B checks the billing sheet']
   };
+  App.STEPS = STEPS;
   V.billing = {
     title: 'Billing days',
+    desc: { what: 'Billing days: the timetable of P1 and B on each advance payment day and billing day, one time slot per company.',
+      why: 'So every company\'s bills and advances get their own time, and nothing is forgotten.',
+      edit: 'Companies are ticked off in Edit → Billing days.' },
     render() {
-      const plan = Store.plan, data = App.data, st = plan.settings, checks = plan.reviews.pay || {};
+      const plan = Store.plan, data = App.data, checks = plan.reviews.pay || {}, ed = App.editing;
       const days = data.gen.occs.filter(o => o.type === 'advance' || o.type === 'billing');
-      return `<section><header class="head"><h1>Advance and billing days</h1></header>
-        <p class="hint">Timetable for P1 and B on each advance payment day and billing day. Tick each company when it is done.</p>
+      return `<section><header class="head"><h1>Advance and billing days</h1>${printBtn('billing')}</header>
         ${days.map(o => {
           const rows = Engine.slotPlan(plan, o, STEPS[o.type], data.gen), past = App.isPast(o.date);
           const done = rows.filter(r => checks[o.key + '|' + r.company]).length;
           return `<article class="card sheet ${past ? 'past' : ''}"><header class="sheet-h"><div><h2>${esc(o.title)}</h2><p class="muted">${D.nice(o.date, { long: true })}, ${esc(App.timeText(o, o.people[0]))}. ${o.people.map(x => esc(App.pname(x))).join(' and ')}.${o.shifted ? ` Moved from ${D.nice(o.planned)}.` : ''}${past ? ' Day over.' : ''}</p></div><span class="count">${done} of ${rows.length}</span></header>
             <p class="muted small">${STEPS[o.type].join(', ')}.</p>
             <ul class="slots">${rows.map(r => {
-              const k = o.key + '|' + r.company;
-              return `<li class="${checks[k] ? 'done' : ''}"><span class="tm">${esc(r.text)}</span><label class="check"><input type="checkbox" data-pay="${esc(k)}" ${checks[k] ? 'checked' : ''}><span>${esc(r.company === 'general' ? 'All works' : App.cname(r.company))}</span></label></li>`;
+              const k = o.key + '|' + r.company, nm = esc(r.company === 'general' ? 'All works' : App.cname(r.company));
+              return `<li class="${checks[k] ? 'done' : ''}"><span class="tm">${esc(r.text)}</span>${ed ? `<label class="check"><input type="checkbox" data-pay="${esc(k)}" ${checks[k] ? 'checked' : ''}><span>${nm}</span></label>` : `<span class="check"><span class="ro-box ${checks[k] ? 'on' : ''}">${checks[k] ? '✓' : ''}</span><span>${nm}</span></span>`}</li>`;
             }).join('')}</ul></article>`;
         }).join('') || '<p class="free">No advance or billing days in this timetable.</p>'}</section>`;
     },
@@ -315,115 +425,5 @@
     }
   };
 
-  /* ---------------- Setup ---------------- */
-  V.setup = {
-    title: 'Setup',
-    render(p) {
-      const plan = Store.plan, st = plan.settings, data = App.data, tab = p.tab || 'work';
-      const tabs = [['work', 'Repeating work'], ['who', 'Who does which company'], ['office', 'Office hours & holidays'], ['problems', `Problems (${data.iss.filter(i => i.level !== 'info').length})`], ['share', 'Share & Excel']];
-      let body = '';
-      if (tab === 'work') {
-        body = `<div class="row-btns"><button type="button" class="btn primary" data-task="">${icon('plus')}New repeating work</button></div>
-          <ul class="tasks">${plan.tasks.map(t => `<li><button type="button" data-task="${esc(t.id)}" style="--c:${(App.TYPES[t.type] || App.TYPES.office).color}">
-            <b>${esc(t.title)}</b><span>${esc(repeatText(t))}, ${t.start}–${t.end}${t.noSite ? ' · no site work that day' : ''}</span><span class="avs">${Engine.normPeople(plan, t.people).map(x => App.avatar(x, 'sm')).join('')}</span></button></li>`).join('')}</ul>`;
-      } else if (tab === 'who') {
-        body = `<p class="hint">Tick who measures each company. A company with two people gets separate days, unless "same day" is ticked.</p>
-          ${Object.keys(App.GROUPS).map(gk => `<h2 class="group">${App.GROUPS[gk]}</h2><div class="card"><table class="tbl who-tbl"><tbody>${plan.companies.filter(c => c.group === gk).map(c => `<tr><th>${esc(c.name)}</th><td>${plan.people.map(x => `<label class="pick sm" style="--pc:${x.color}"><input type="checkbox" data-resp="${esc(c.id)}|${esc(x.id)}" ${((plan.responsibilities[x.id] || {})[gk] || []).includes(c.id) ? 'checked' : ''}><span>${esc(x.id)}</span></label>`).join('')}</td><td><label class="check small"><input type="checkbox" data-tog="${esc(c.id)}" ${c.together ? 'checked' : ''}> same day</label></td></tr>`).join('')}</tbody></table></div>`).join('')}
-          <h2 class="group">Names</h2><div class="card"><table class="tbl"><tbody>${plan.people.map(x => `<tr><th>${App.avatar(x.id, 'sm')}</th><td><input data-pname="${esc(x.id)}" value="${esc(x.name)}" aria-label="Name"></td><td><input data-pfull="${esc(x.id)}" value="${esc(x.fullName || '')}" placeholder="Full name" aria-label="Full name"></td><td class="offs"><span class="small muted">Off</span>${[1, 2, 3, 4, 5, 6, 0].map(dw => `<label class="pick sm" style="--pc:${x.color}"><input type="checkbox" data-off="${esc(x.id)}|${dw}" ${(x.offDays || []).includes(dw) ? 'checked' : ''}><span>${D.DAYS[dw].slice(0, 2)}</span></label>`).join('')}</td></tr>`).join('')}</tbody></table>
-          <p class="muted small">"Off" days are weekly days off. Meetings, billing and advances on those days move to the next day the whole group works; other work goes on without that person.</p></div>`;
-      } else if (tab === 'office') {
-        body = `<div class="grid2"><article class="card"><h2>Office hours</h2><form id="hours" class="form">
-            <label>Timetable from<input type="date" name="start" value="${st.start}"></label><label>to<input type="date" name="end" value="${st.end}"></label>
-            <div class="row2"><label>Slot 1 from<input type="time" name="s1a" value="${(st.slots[0] || {}).start || '10:30'}"></label><label>to<input type="time" name="s1b" value="${(st.slots[0] || {}).end || '13:30'}"></label></div>
-            <div class="row2"><label>Slot 2 from<input type="time" name="s2a" value="${(st.slots[1] || {}).start || '14:30'}"></label><label>to<input type="time" name="s2b" value="${(st.slots[1] || {}).end || '19:00'}"></label></div>
-            <p class="muted small">Two different works can be given in the two slots. Meetings run 9:15–10:30, before Slot 1.</p>
-            <label class="check"><input type="checkbox" name="sundayStreak" ${st.sundayStreak ? 'checked' : ''}> Work on a Sunday inside a work streak</label>
-            <button class="btn primary" type="submit">Save</button></form></article>
-          <article class="card"><h2>Holidays</h2><ul class="list">${plan.holidays.slice().sort((a, b) => a.date < b.date ? -1 : 1).map(h => `<li><span>${D.nice(h.date, { long: true })}</span><b>${esc(h.name)}</b><button type="button" class="x" data-rmhol="${h.date}" aria-label="Remove">${icon('x')}</button></li>`).join('')}</ul>
-            <form id="hol" class="form"><div class="row2"><label>Date<input type="date" name="date" required></label><label>Name<input name="name" value="Holiday" required></label></div><button class="btn ghost" type="submit">${icon('plus')}Add holiday</button></form></article></div>`;
-      } else if (tab === 'problems') {
-        const list = data.iss.filter(i => i.level !== 'info');
-        body = list.length ? `<ul class="problems">${list.map(i => `<li class="${i.level}">${i.date ? `<a href="#/today?date=${i.date}">${D.nice(i.date)}</a>` : ''}<span>${esc(i.text)}</span>${(i.keys || []).slice(0, 1).map(k => `<button type="button" class="btn ghost sm" data-occ="${esc(k)}">Fix</button>`).join('')}</li>`).join('')}</ul>` : '<p class="free">No problems. Nobody is booked twice.</p>';
-      } else {
-        body = `<div class="grid2">
-          <article class="card"><h2>Excel</h2><p class="muted">Person-wise, company-wise, meetings, advance and billing days, all with filters for sorting.</p><button type="button" class="btn primary" id="xlsx">${icon('download')}Download Excel</button></article>
-          <article class="card"><h2>Share with the office</h2><p class="muted">Changes are saved in this browser. Send a link, or publish <code>plan.json</code> in the website's <code>data</code> folder so everyone starts from it.</p>
-            <div class="row-btns"><button type="button" class="btn ghost" id="share">${icon('share')}Copy share link</button><button type="button" class="btn ghost" id="office">${icon('download')}Download plan.json</button></div></article>
-          <article class="card"><h2>Backup</h2><div class="row-btns"><button type="button" class="btn ghost" id="bk">${icon('download')}Save backup</button><label class="btn ghost">${icon('upload')}Load backup<input type="file" id="load" accept=".json" hidden></label></div></article>
-          <article class="card"><h2>Start again</h2><p class="muted">Replace all changes with the plan from the Excel sheet.</p><button type="button" class="btn ghost danger" id="reset">Start again</button></article></div>`;
-      }
-      return `<section><header class="head"><h1>Setup</h1></header><nav class="tabs plain">${tabs.map(([k, l]) => `<a href="#/setup?tab=${k}" class="${tab === k ? 'on' : ''}">${l}</a>`).join('')}</nav>${body}</section>`;
-    },
-    mount(root) {
-      const on = (sel, fn) => { const el = $(sel, root); if (el) fn(el); };
-      $$('[data-resp]', root).forEach(c => c.onchange = () => { const [cid, pid] = c.dataset.resp.split('|'); const co = Store.plan.companies.find(x => x.id === cid);
-        App.commit(`${co.name}: ${App.pname(pid)} ${c.checked ? 'added' : 'removed'}`, p => { const r = p.responsibilities[pid]; r[co.group] = (r[co.group] || []).filter(x => x !== cid); if (c.checked) r[co.group].push(cid); }); });
-      $$('[data-tog]', root).forEach(c => c.onchange = () => App.commit('Saved', p => { p.companies.find(x => x.id === c.dataset.tog).together = c.checked; }));
-      $$('[data-pname]', root).forEach(i => i.onchange = () => App.commit('Name saved', p => { p.people.find(x => x.id === i.dataset.pname).name = i.value || i.dataset.pname; }));
-      $$('[data-pfull]', root).forEach(i => i.onchange = () => App.commit('Name saved', p => { p.people.find(x => x.id === i.dataset.pfull).fullName = i.value; }));
-      on('#hours', f => f.onsubmit = e => { e.preventDefault(); const fd = new FormData(f);
-        const s1 = { start: fd.get('s1a'), end: fd.get('s1b') }, s2 = { start: fd.get('s2a'), end: fd.get('s2b') };
-        if (!(T.m(s1.start) < T.m(s1.end) && T.m(s1.end) <= T.m(s2.start) && T.m(s2.start) < T.m(s2.end))) { toast('Slot 1 must end before Slot 2 starts.'); return; }
-        App.commit('Office hours saved', p => Object.assign(p.settings, { start: fd.get('start'), end: fd.get('end'), slots: [s1, s2], workStart: s1.start, workEnd: s2.end, lunchStart: s1.end, lunchEnd: s2.start, sundayStreak: !!fd.get('sundayStreak') })); });
-      $$('[data-off]', root).forEach(c => c.onchange = () => { const [pid, dw] = c.dataset.off.split('|');
-        App.commit(`${App.pname(pid)}: ${D.DAYS[+dw]} ${c.checked ? 'off' : 'working'}`, p => { const x = p.people.find(y => y.id === pid); const s = new Set(x.offDays || []); if (c.checked) s.add(+dw); else s.delete(+dw); x.offDays = [...s]; }); });
-      on('#hol', f => f.onsubmit = e => { e.preventDefault(); const fd = new FormData(f); App.commit('Holiday added', p => { p.holidays = p.holidays.filter(h => h.date !== fd.get('date')).concat({ date: fd.get('date'), name: fd.get('name') }); }); });
-      $$('[data-rmhol]', root).forEach(b => b.onclick = () => App.commit('Holiday removed', p => { p.holidays = p.holidays.filter(h => h.date !== b.dataset.rmhol); }));
-      on('#xlsx', b => b.onclick = exportExcel);
-      on('#share', b => b.onclick = async () => { const link = await Store.shareLink(); try { await navigator.clipboard.writeText(link); toast('Link copied. Paste it in WhatsApp or email.'); } catch (e) { modal({ title: 'Share link', body: `<textarea rows="5" readonly>${esc(link)}</textarea>` }); } });
-      on('#office', b => b.onclick = () => { const pl = Store.clone(Store.plan); delete pl.savedAt; IO.download(IO.json(pl), 'plan.json'); toast('plan.json downloaded. Put it in the data folder of the website.'); });
-      on('#bk', b => b.onclick = () => IO.download(IO.json(Store.plan), `timetable-backup-${D.today()}.json`));
-      on('#load', i => i.onchange = async () => { try { const pl = JSON.parse(await i.files[0].text()); if (!pl.tasks) throw 0; Store.replace(pl, 'Backup loaded'); } catch (e) { toast('That is not a timetable backup file.'); } });
-      on('#reset', b => b.onclick = () => UI.confirmBox('Start again?', 'All changes are replaced by the plan from the Excel sheet. You can undo this.', 'Start again', () => Store.resetToExcel(), true));
-    }
-  };
-
-  function repeatText(t) {
-    if (t.mode === 'daily') return 'Every working day';
-    if (t.mode === 'weekly') return `${t.perWeek || 1} days a week`;
-    const d = (t.days || []).slice().sort((a, b) => a - b), runs = [];
-    d.forEach(x => { const l = runs[runs.length - 1]; if (l && x === l[1] + 1) l[1] = x; else runs.push([x, x]); });
-    return 'Dates ' + runs.map(r => r[0] === r[1] ? r[0] : `${r[0]}–${r[1]}`).join(', ');
-  }
-
-  /* ---------------- Excel ---------------- */
-  function exportExcel() {
-    const plan = Store.plan, data = App.compute(), st = plan.settings;
-    const nm = id => App.pname(id), cn = id => App.cname(id), ty = t => (App.TYPES[t] || {}).label || t;
-    const RL = App.REMARK_LABELS, rmk = k => plan.remarks[k] || {};
-    const IL = k => (App.IMP[k] || {}).label || '';
-    const pw = [['Person', 'Date', 'Day', 'Week of', 'Month', 'Slot', 'Start', 'End', 'Hours', 'Work', 'Kind', 'Importance', 'Clearance form', 'Status', 'Remarks']];
-    data.gen.dates.forEach(d => plan.people.forEach(p => App.dayRows(d, p.id).forEach(r => {
-      const rr = rmk(r.o.key + '|' + p.id);
-      pw.push([nm(p.id), d, D.DAYS[D.dow(d)], D.weekStart(d), D.month(d), r.noTime ? 'No free slot' : r.slot >= 0 ? `Slot ${r.slot + 1}` : 'Meeting / other', r.noTime ? '' : T.s(r.a), r.noTime ? '' : T.s(r.b), r.noTime ? 0 : +((r.b - r.a) / 60).toFixed(2), App.personLabel(r.o, p.id), ty(r.o.type), IL(App.imp(r.o.key, p.id)), App.isB(p.id) ? '' : (plan.clear[r.o.key + '|' + p.id] ? 'Done' : ''), RL[rr.s] || '', rr.t || '']);
-    })));
-    const rem = [['Date', 'Person', 'Work', 'Status', 'Remarks']];
-    Object.keys(plan.remarks).sort().forEach(k => { const i = k.lastIndexOf('|'), key = k.slice(0, i), pid = k.slice(i + 1), r = plan.remarks[k];
-      const o = data.byKey[key], dayK = key.startsWith('day@');
-      rem.push([dayK ? key.slice(4) : (o ? o.date : ''), nm(pid), dayK ? 'Whole day' : (o ? App.personLabel(o, pid) : key), RL[r.s] || '', r.t || '']); });
-    const weeks = [...new Set(data.gen.dates.map(D.weekStart))], months = [...new Set(data.gen.dates.map(D.month))];
-    const hrs = [['Person', ...weeks.map(w => 'Week of ' + w), ...months.map(m => 'Month ' + m), 'Total hours']];
-    plan.people.forEach(p => { const s = data.stats.per[p.id]; const f = fn => +(Object.keys(s.byDate).filter(fn).reduce((a, d) => a + s.byDate[d], 0) / 60).toFixed(2);
-      hrs.push([nm(p.id), ...weeks.map(w => f(d => D.weekStart(d) === w)), ...months.map(m => f(d => D.month(d) === m)), +(s.booked / 60).toFixed(2)]); });
-    const daily = [['Date', 'Day', ...plan.people.map(p => nm(p.id))]];
-    data.gen.dates.forEach(d => daily.push([d, data.gen.hol[d] || D.DAYS[D.dow(d)], ...plan.people.map(p => App.dayRows(d, p.id).map(r => r.noTime ? `No slot: ${App.personLabel(r.o, p.id)}` : `${T.s(r.a)}-${T.s(r.b)} ${App.personLabel(r.o, p.id)}`).join(' | '))]));
-    const comp = [['Company', 'Group', 'Date', 'Day', 'Person', 'Run']];
-    data.gen.visits.slice().sort((a, b) => cn(a.company) === cn(b.company) ? (a.date < b.date ? -1 : 1) : (cn(a.company) < cn(b.company) ? -1 : 1))
-      .forEach(v => comp.push([cn(v.company), App.GROUPS[(plan.companies.find(c => c.id === v.company) || {}).group] || '', v.date, D.DAYS[D.dow(v.date)], nm(v.person), v.cycle]));
-    const meet = [['Date', 'Meeting', 'Attending', 'Out of station', 'Start', 'Agenda item', 'Minutes', 'People']];
-    data.gen.occs.filter(o => o.type === 'meeting').forEach(o => { let cur = T.m(o.start); ((App.task(o.taskId) || {}).agenda || []).forEach(a => { meet.push([o.date, o.title, o.people.map(nm).join(', '), (o.away || []).map(nm).join(', '), T.s(cur), a.item, a.minutes, (a.owners || []).map(nm).join(', ')]); cur += Number(a.minutes) || 0; }); });
-    const pay = [['Date', 'Kind', 'Start', 'End', 'Company', 'Steps', 'People']];
-    data.gen.occs.filter(o => o.type === 'advance' || o.type === 'billing').forEach(o => Engine.slotPlan(plan, o, STEPS[o.type], data.gen).forEach(r => pay.push([o.date, o.title, r.start, r.end, r.company === 'general' ? 'All works' : cn(r.company), STEPS[o.type].join(', '), o.people.map(nm).join(', ')])));
-    const sched = [['Date', 'Day', 'Start', 'End', 'Hours', 'Work', 'Kind', 'People', 'Out of station']];
-    data.gen.occs.forEach(o => sched.push([o.date, D.DAYS[D.dow(o.date)], o.start, o.end, +(o.mins / 60).toFixed(2), o.title, ty(o.type), o.people.map(nm).join(', '), (o.away || []).map(nm).join(', ')]));
-    const pts = [['Person', 'Company', 'Run', 'Ticked on', 'Due', 'Points']];
-    Object.values(plan.targets).sort((a, b) => a.d < b.d ? -1 : 1).forEach(t => pts.push([nm(t.p), cn(t.c), (t.run || '').replace('@', ' '), t.d, t.due || '', Number(st.targetPoints) || 100]));
-    plan.people.filter(x => !App.isB(x.id)).forEach(x => pts.push([nm(x.id), 'TOTAL', '', '', '', App.points(x.id)]));
-    const fus = [['Company', 'Date', '6 pm follow-up points']];
-    Object.keys(plan.followups).sort().forEach(k => { const [c, d] = k.split('|'); fus.push([cn(c), d, plan.followups[k]]); });
-    const lv = [['Person', 'Date']];
-    Object.keys(plan.leave).sort().forEach(k => { const [pid, d] = k.split('|'); lv.push([nm(pid), d]); });
-    IO.download(IO.xlsx([{ name: 'Person-wise', rows: pw }, { name: 'Hours', rows: hrs }, { name: 'Day grid', rows: daily }, { name: 'Company-wise', rows: comp }, { name: 'Meetings', rows: meet }, { name: 'Advance & billing', rows: pay }, { name: 'All work', rows: sched }, { name: 'Remarks', rows: rem }, { name: 'Points', rows: pts }, { name: 'Company follow-ups', rows: fus }, { name: 'Leave', rows: lv }]), `timetable-${st.start}-to-${st.end}.xlsx`);
-    toast('Excel downloaded.');
-  }
+  Object.assign(App, { companyEntries, monthName, listDates, pickMonth });
 })();

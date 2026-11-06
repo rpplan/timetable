@@ -3,8 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://www.gstatic.com wss://*.firebaseio.com; frame-src https://*.firebaseapp.com; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Works timetable</title>
-  <meta name="description" content="Office timetable: who measures which site, billing and advance days, and meetings.">
   <meta name="theme-color" content="#ffffff">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,30 +15,40 @@
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
-  <header class="top">
-    <div class="top-in">
-      <a href="#/today" class="brand"><img src="assets/icon.svg" alt="" width="30" height="30"><span><b id="title">Works timetable</b><small id="range"></small></span></a>
-      <div class="top-acts">
-        <button type="button" id="clash-badge" class="badge" hidden></button>
-        <button type="button" id="bmode" class="btn ghost"></button>
-        <button type="button" id="undo" class="btn ghost" disabled>Undo</button>
-        <button type="button" id="add" class="btn primary">Add work</button>
+  <div id="lock" class="lock-screen"></div>
+  <div id="app" hidden>
+    <header class="top">
+      <div class="top-in">
+        <a href="#/today" class="brand"><img src="assets/icon.svg" alt="" width="30" height="30"><span><b id="title">Works timetable</b><small id="range"></small></span></a>
+        <div class="top-acts">
+          <span id="sync" class="sync" aria-live="polite"></span>
+          <button type="button" id="clash-badge" class="badge" hidden></button>
+          <button type="button" id="undo" class="btn ghost" disabled hidden>Undo</button>
+          <button type="button" id="add" class="btn primary" hidden>Add work</button>
+          <button type="button" id="theme" class="btn ghost"></button>
+          <button type="button" id="logoff" class="btn ghost"></button>
+        </div>
       </div>
-    </div>
-    <nav id="nav" class="mainnav" aria-label="Pages"></nav>
-  </header>
-  <main id="view" class="wrap" tabindex="-1"></main>
+      <nav id="nav" class="mainnav" aria-label="Pages"></nav>
+      <p id="idle-warn" class="idle-warn" hidden></p>
+    </header>
+    <main id="view" class="wrap" tabindex="-1"></main>
+  </div>
   <div id="modal" class="modal" hidden></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="assets/js/firebase-config.js"></script>
   <script src="assets/js/defaults.js"></script>
   <script src="assets/js/engine.js"></script>
   <script src="assets/js/store.js"></script>
   <script src="assets/js/io.js"></script>
   <script src="assets/js/ui.js"></script>
+  <script src="assets/js/cloud.js"></script>
+  <script src="assets/js/vault.js"></script>
   <script src="assets/js/app.js"></script>
   <script src="assets/js/bmode.js"></script>
   <script src="assets/js/views.js"></script>
-  <script src="assets/js/pages.js"></script>
+  <script src="assets/js/edit.js"></script>
+  <script src="assets/js/chart.js"></script>
   <script src="assets/js/main.js"></script>
 </body>
 </html>

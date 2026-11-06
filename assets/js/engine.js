@@ -334,7 +334,6 @@
           start, due: D.add(start, tDays - 1),
           cycle: t.cycle || (t.siteGroup === 'outstation' ? 'Outstation' : ''), moved: !!vo, siteGroup: t.siteGroup, repeat: !!repeat });
       };
-      const perDay = (pid, d) => visits.filter(v => v.runKey === rk && v.person === pid && v.date === d).length;
       const comp = id => plan.companies.find(c => c.id === id) || {};
       const has = (pid, cid) => (((plan.responsibilities[pid] || {})[t.siteGroup]) || []).includes(cid);
       plan.companies.filter(c => c.together && ppl.some(pid => has(pid, c.id))).forEach(c => {
@@ -343,31 +342,44 @@
         const common = pDates[holders[0]].filter(d => holders.every(h => pDates[h].includes(d) && !taken[h].has(d)));
         holders.forEach(h => push(c.id, h, common[0] || null, holders.length > 1));
       });
+      const mode = t.assign || (t.fillDays ? 'perDay' : 'each');
+      const [, mk] = rk.split('@'); const mIdx = (Number(mk.slice(0, 4)) * 12 + Number(mk.slice(5, 7))) - (Number(st.start.slice(0, 4)) * 12 + Number(st.start.slice(5, 7)));
+      const mod = (a, n) => ((a % n) + n) % n;
       ppl.forEach(pid => {
+        const mine = (((plan.responsibilities[pid] || {})[t.siteGroup]) || []).filter(cid => !comp(cid).together);
+        const days = pDates[pid] || [];
+        if (mode === 'perRun') {
+          // One company for the whole run; the next run of this group (C-1 -> C-3 -> next C-1) takes the next company.
+          if (!mine.length || !days.length) return;
+          const group = plan.tasks.filter(x => x.assign === 'perRun' && x.siteGroup === t.siteGroup)
+            .sort((a, b) => Math.min(...(a.days || [99])) - Math.min(...(b.days || [99])));
+          const idx = mIdx * Math.max(1, group.length) + Math.max(0, group.findIndex(x => x.id === t.id));
+          const cid = mine[mod(idx, mine.length)];
+          days.forEach((d, i) => push(cid, pid, d, false, i > 0));
+          return;
+        }
+        if (mode === 'perDay') {
+          // One company per day, one after the other; the turn carries on into next month's run.
+          if (!mine.length) return;
+          let i = mod(mIdx * Math.max(1, (t.days || []).length), mine.length);
+          const seenHere = new Set();
+          days.forEach(d => {
+            for (let k = 0; k < mine.length; k++) {
+              const cid = mine[(i + k) % mine.length];
+              if (usedBy[cid] && usedBy[cid].has(d)) continue;
+              push(cid, pid, d, false, seenHere.has(cid)); seenHere.add(cid); i = i + k + 1; break;
+            }
+          });
+          const left = mine.filter(c => !seenHere.has(c));
+          if (left.length && days.length && list.some(o => inWin(o.date))) notes.push({ level: 'info', kind: 'nextturn', date: days[0], taskId: t.id,
+            text: `${personName(plan, pid)} has more companies than days in ${t.title} (${mk}): ${left.map(c => companyName(plan, c)).join(', ')} come next in turn.` });
+          return;
+        }
+        // 'each': every company gets its own day (outstation)
         (((plan.responsibilities[pid] || {})[t.siteGroup]) || []).forEach(cid => {
           if (comp(cid).together) return;
-          const d = pDates[pid].find(x => !taken[pid].has(x) && !(usedBy[cid] && usedBy[cid].has(x)));
-          if (!d && t.fillDays) return;      // placed below as a second company on a day
+          const d = days.find(x => !taken[pid].has(x) && !(usedBy[cid] && usedBy[cid].has(x)));
           push(cid, pid, d || null);
-        });
-        if (!t.fillDays) return;
-        // One of the person's own companies on every day of the run:
-        const mine = (((plan.responsibilities[pid] || {})[t.siteGroup]) || []).filter(cid => !comp(cid).together);
-        if (!mine.length || !pDates[pid].length) return;
-        // a) companies that got no day of their own share a day (Slot 1 / Slot 2), so none is left out
-        mine.filter(cid => !visits.some(v => v.key === `${rk}|${cid}|${pid}`)).forEach(cid => {
-          const d = pDates[pid].find(x => perDay(pid, x) === 1 && !(usedBy[cid] && usedBy[cid].has(x)));
-          push(cid, pid, d || null);
-        });
-        // b) days still without a company get the next company in turn (a follow-up visit)
-        let i = 0;
-        pDates[pid].forEach(d => {
-          if (taken[pid].has(d)) return;
-          for (let k = 0; k < mine.length; k++, i++) {
-            const cid = mine[i % mine.length];
-            if (usedBy[cid] && usedBy[cid].has(d)) continue;
-            push(cid, pid, d, false, true); i++; break;
-          }
         });
       });
     });
@@ -424,6 +436,24 @@
     entries.sort((x, y) => (x.noTime - y.noTime) || ((x.parts[0] || [9999])[0] - (y.parts[0] || [9999])[0]));
   }
 
+  /* Which days of the month a company group may have site work. Returns a message when the date is outside. */
+  function windowDays(plan, group) {
+    if (group === 'outstation') {
+      const set = new Set(); plan.tasks.filter(t => t.type === 'outstation' && (t.mode || 'monthly') === 'monthly').forEach(t => (t.days || []).forEach(d => set.add(d)));
+      return [...set].sort((a, b) => a - b);
+    }
+    const w = (plan.settings.windows || {})[group];
+    return Array.isArray(w) && w.length ? w : null;
+  }
+  function windowProblem(plan, cid, date) {
+    const c = plan.companies.find(x => x.id === cid); if (!c) return null;
+    const days = windowDays(plan, c.group); if (!days) return null;
+    const dd = D.day(date);
+    if (days.includes(dd)) return null;
+    const label = { main: 'main contractors', other: 'other contractors', outstation: 'outstation sites' }[c.group];
+    return `${c.name} on ${D.nice(date)} is outside the days for ${label} (${days.join(', ')}).`;
+  }
+
   function companyName(plan, id) { const c = plan.companies.find(c => c.id === id); return c ? c.name : id; }
   function personName(plan, id) { const p = personOf(plan, id); return p ? p.name : id; }
 
@@ -460,8 +490,12 @@
       const ok = gen.occs.some(o => o.runKey === v.runKey && o.date === v.date && o.people.includes(v.person));
       if (!ok) out.push({ level: 'warn', kind: 'visit', date: v.date, person: v.person, text: `${companyName(plan, v.company)} site day on ${D.nice(v.date)}: ${personName(plan, v.person)} is not on that measurement run that day.` });
     });
-    gen.visits.forEach(v => { if (v.date > v.due) out.push({ level: 'warn', kind: 'target', date: v.date, person: v.person,
+    gen.visits.forEach(v => { if (!v.repeat && v.date > v.due) out.push({ level: 'warn', kind: 'target', date: v.date, person: v.person,
       text: `${companyName(plan, v.company)} site day for ${personName(plan, v.person)} on ${D.nice(v.date)} is after the ${st.targetDays || 7}-day target (${D.nice(v.start)} to ${D.nice(v.due)}).` }); });
+    // Site windows: main contractors only on their days, other contractors only on theirs, outstation only on trip days
+    gen.visits.forEach(v => { const m = windowProblem(plan, v.company, v.date); if (m) out.push({ level: 'warn', kind: 'window', date: v.date, person: v.person, text: `${personName(plan, v.person)}: ${m}` }); });
+    gen.occs.filter(o => o.extra && (o.type === 'site' || o.type === 'outstation')).forEach(o => (o.companies || []).forEach(cid => {
+      const m = windowProblem(plan, cid, o.date); if (m) out.push({ level: 'warn', kind: 'window', date: o.date, keys: [o.key], text: m }); }));
     const order = { clash: 0, warn: 1, info: 2 };
     return out.sort((a, b) => (order[a.level] - order[b.level]) || ((a.date || '') < (b.date || '') ? -1 : 1));
   }
@@ -541,5 +575,5 @@
   }
 
   g.Engine = { D, T, workMins, unionMins, generate, issues, stats, describe, capacityMins, personOf, personName, companyName, normPeople, overlapMins, slotPlan, workingDates,
-    slotsOf, gapsOf, inGap, partsText, personOff, minusGaps };
+    slotsOf, gapsOf, inGap, partsText, personOff, minusGaps, windowDays, windowProblem };
 })(typeof window !== 'undefined' ? window : globalThis);

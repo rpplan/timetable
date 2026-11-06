@@ -1,4 +1,5 @@
-/* B mode (opened with B's pattern), importance levels, clearance forms, 7-day site targets and points, leave. */
+/* Importance levels, clearance forms, 7-day site targets and points, leave, and the pattern that opens B's admin schedule.
+   Inputs are only shown in the Edit area (App.editing); the view pages show the same information as plain labels. */
 (function () {
   'use strict';
   const { D, T } = Engine;
@@ -23,12 +24,13 @@
   Object.assign(App, {
     IMP,
     isB(pid) { return pid === 'B'; },
-    bOn() { return unlocked && !!Store.plan.settings.bPin; },
-    lockB() { unlocked = false; try { sessionStorage.removeItem(SKEY); } catch (e) { /* ignore */ } App.keepScroll = true; App.render(); toast('B mode locked.'); },
+    bOn() { return !!App.editing; },
+    adminOpen() { return unlocked && !!Store.plan.settings.bPin; },
+    lockB() { unlocked = false; try { sessionStorage.removeItem(SKEY); } catch (e) { /* ignore */ } App.keepScroll = true; App.render(); toast('Admin schedule locked.'); },
     unlockB() { unlocked = true; try { sessionStorage.setItem(SKEY, '1'); } catch (e) { /* ignore */ } },
     /* Run next() in B mode; asks for the pattern first if needed */
     requireB(next, why) {
-      if (App.bOn()) { next(); return; }
+      if (App.adminOpen()) { next(); return; }
       patternModal(why, () => { App.unlockB(); App.keepScroll = true; App.render(); next(); });
     },
 
@@ -51,6 +53,7 @@
     clearBox(key, pid, date) {
       if (App.isB(pid) || date > D.today()) return '';
       const on = !!Store.plan.clear[key + '|' + pid];
+      if (!App.editing) return on ? '<span class="clr on">✓ Clearance form</span>' : '<span class="clr">Clearance form pending</span>';
       return `<label class="clr ${on ? 'on' : ''}"><input type="checkbox" data-clr="${esc(key)}|${esc(pid)}" ${on ? 'checked' : ''}>Clearance form</label>`;
     },
 
@@ -67,6 +70,8 @@
       const st = App.targetState(v), per = Number(Store.plan.settings.targetPoints) || 100;
       const name = `${App.cname(v.company)}${v.cycle ? ' (' + v.cycle + ')' : ''}`;
       const due = `due ${D.nice(v.due, { short: true })}`;
+      if (!App.editing && st === 'ticked') return `<div class="tgt done"><span class="tick">✓</span><span>${esc(name)} <small>done in time · ${due} · +${per}</small></span></div>`;
+      if (!App.editing && st === 'open') return `<div class="tgt open-ro"><span class="tick">○</span><span>${esc(name)} <small>open · ${due} · ${per} points</small></span></div>`;
       if (st === 'open' || st === 'ticked') return `<label class="tgt ${st}"><input type="checkbox" data-tgt="${esc(v.key)}" ${st === 'ticked' ? 'checked' : ''}><span>${esc(name)} measured within ${Store.plan.settings.targetDays || 7} days <small>${due} · ${per} points</small></span></label>`;
       if (st === 'done') return `<div class="tgt done"><span class="tick">✓</span><span>${esc(name)} <small>done in time · +${per}</small></span></div>`;
       if (st === 'missed') return `<div class="tgt missed"><span class="tick">–</span><span>${esc(name)} <small>${due}, not marked</small></span></div>`;
@@ -124,8 +129,8 @@
           else { msg.textContent = 'Wrong pattern. Try again.'; pad.error(); }
         });
         const f = $('#pat-forgot', m);
-        if (f) f.onclick = () => confirmBox('Reset B\'s pattern?', 'To keep it private, B\'s admin schedule is deleted when the pattern is reset. Then a new pattern is drawn.', 'Reset pattern', () => {
-          Store.change('B\'s pattern reset', p => { p.settings.bPin = ''; p.admin = {}; });
+        if (f) f.onclick = () => confirmBox('Reset B\'s pattern?', 'You are logged in with B\'s password, so the pattern can be reset here. The admin schedule is kept. Then a new pattern is drawn.', 'Reset pattern', () => {
+          Store.change('B\'s pattern reset', p => { p.settings.bPin = ''; });
           patternModal(why, onOk);
         }, true);
       }
@@ -136,7 +141,6 @@
   /* ---------- event binding (called from every page render) ---------- */
   App.bindExtras = function (root) {
     $$('[data-imp]', root).forEach(s => s.onchange = () => {
-      if (!App.bOn()) return;
       const k = s.dataset.imp;
       App.keepScroll = true;
       Store.change('Importance set', p => { if (s.value) p.importance[k] = s.value; else delete p.importance[k]; });
@@ -157,7 +161,7 @@
       toast(c.checked ? `${App.pname(v.person)}: ${App.cname(v.company)} done in time. +${per} points.` : 'Tick removed.');
     });
     $$('[data-leave]', root).forEach(b => b.onclick = () => { const [pid, date, on] = b.dataset.leave.split('|'); App.setLeave(pid, date, on === '1'); });
-    $$('[data-bopen]', root).forEach(b => b.onclick = () => App.requireB(() => {}, 'B mode lets B set importance and manage records.'));
+    $$('[data-bopen]', root).forEach(b => b.onclick = () => App.requireB(() => {}, 'Draw B\'s pattern to open the admin schedule.'));
     $$('[data-print]', root).forEach(b => b.onclick = () => { document.body.dataset.print = b.dataset.print || ''; window.print(); });
   };
   window.addEventListener('afterprint', () => { delete document.body.dataset.print; });

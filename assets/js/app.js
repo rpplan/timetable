@@ -45,6 +45,11 @@
     slotLabel(i) { const s = this.data.gen.slots[i]; return s ? `Slot ${i + 1} ${T.s(s[0])}–${T.s(s[1])}` : ''; },
     slotsText() { return this.data.gen.slots.map((s, i) => this.slotLabel(i)).join(' and '); },
     remark(key, pid) { return (Store.plan.remarks || {})[key + '|' + pid] || {}; },
+    /* Site-window rule: null when the date is allowed for this company group, otherwise a message */
+    windowMsg(group, date) {
+      const days = Engine.windowDays(Store.plan, group); if (!days || days.includes(D.day(date))) return null;
+      return `${GROUPS[group]} have site work only on days ${days.join(', ')} of the month. ${D.nice(date)} is outside.`;
+    },
     defaultDate() { const st = Store.plan.settings, t = D.today(); return (t >= st.start && t <= st.end) ? t : st.start; },
 
     /* What this person does in this piece of work (site runs name the company) */
@@ -96,8 +101,8 @@
       const e = pid ? this.entry(o, pid) : null, past = this.isPast(o.date);
       const startT = e && e.parts.length ? T.s(e.parts[0][0]) : o.start;
       const rk = pid ? this.remark(o.key, pid) : {};
-      const tag = past ? 'span' : 'button';
-      return `<${tag} ${past ? '' : 'type="button"'} class="pill ${clash ? 'clash' : ''} ${o.status === 'done' || rk.s === 'done' ? 'done' : ''} ${past ? 'past' : ''} ${e && e.noTime ? 'notime' : ''}" style="--c:${ty.color};--bg:${ty.bg}" ${past ? '' : `data-occ="${esc(o.key)}" draggable="true"`} ${pid && !past ? `data-from="${esc(pid)}"` : ''}
+      const tag = past ? 'span' : 'button', drag = this.editing && !past;
+      return `<${tag} ${past ? '' : 'type="button"'} class="pill ${clash ? 'clash' : ''} ${o.status === 'done' || rk.s === 'done' ? 'done' : ''} ${past ? 'past' : ''} ${e && e.noTime ? 'notime' : ''}" style="--c:${ty.color};--bg:${ty.bg}" ${past ? '' : `data-occ="${esc(o.key)}"${drag ? ' draggable="true"' : ''}`} ${pid && drag ? `data-from="${esc(pid)}"` : ''}
         title="${esc(o.title + '\n' + this.timeText(o, pid) + (rk.s ? '\nStatus: ' + (REMARK_LABELS[rk.s] || rk.s) : '') + (rk.t ? '\nRemarks: ' + rk.t : '') + '\n' + o.people.map(p => this.pname(p)).join(', ') + (o.away && o.away.length ? '\nOut of station: ' + o.away.map(p => this.pname(p)).join(', ') : '') + (clash ? '\nClash: booked twice' : ''))}">
         ${opts.time !== false ? `<span class="pt">${e && e.noTime ? '–' : startT}</span>` : ''}<span class="pl">${esc(pid ? this.personLabel(o, pid) : o.title)}</span>${opts.people ? `<span class="pp">${o.people.map(p => `<i style="--pc:${this.pcolor(p)}">${esc(this.person(p) ? this.person(p).id : p)}</i>`).join('')}</span>` : ''}</${tag}>`;
     },
@@ -113,16 +118,22 @@
       const [v, q] = location.hash.replace(/^#\/?/, '').split('?');
       this.route = { view: this.views[v] ? v : 'today', params: Object.fromEntries(new URLSearchParams(q || '')) };
     },
+    /* Short description shown above every page: what it does and what it is for */
+    intro(d) { return d ? `<aside class="intro noprint"><p><b>${esc(d.what)}</b></p><p>${esc(d.why)}</p>${d.edit ? `<p class="intro-edit">${esc(d.edit)}</p>` : ''}</aside>` : ''; },
     render() {
+      if (!Store.plan) return;
       this.compute();
       const v = this.views[this.route.view];
+      this.editing = !!v.editing;
       const root = $('#view');
       const y = window.scrollY;
-      root.innerHTML = v.render(this.route.params);
+      root.innerHTML = (v.desc ? this.intro(v.desc) : '') + v.render(this.route.params);
       if (v.mount) v.mount(root, this.route.params);
       bindCommon(root);
       App.bindExtras(root);
       const navView = { company: 'companies' }[this.route.view] || this.route.view;
+      $('#undo').hidden = !this.editing; $('#add').hidden = !this.editing;
+      if (this.pendingOpen && this.editing) { const k = this.pendingOpen; this.pendingOpen = null; setTimeout(() => this.openOcc(k), 50); }
       $$('#nav a').forEach(a => { const on = a.dataset.view === navView; a.classList.toggle('on', on); a.setAttribute('aria-current', on ? 'page' : 'false'); });
       $('#undo').disabled = !Store.undoStack.length;
       const n = this.data.iss.filter(i => i.level === 'clash').length;
@@ -141,6 +152,8 @@
       const o = this.data.byKey[key]; if (!o || o.date === date) return;
       if (this.isPast(date) || this.isPast(o.date)) { toast('Past days are closed. Write a remark instead.'); return; }
       if (o.carried) { toast('This work was carried over from leave. Cancel the leave to move it back.'); return; }
+      const wm = o.siteGroup ? this.windowMsg(o.siteGroup, date) : (o.extra && (o.type === 'site' || o.type === 'outstation') ? (o.companies || []).map(c => Engine.windowProblem(Store.plan, c, date)).find(Boolean) : null);
+      if (wm) { toast(wm); return; }
       if (key.startsWith('x:')) return this.commit(`Moved ${o.title} to ${D.nice(date)}`, p => { p.extra.find(x => 'x:' + x.id === key).date = date; });
       this.commit(`Moved ${o.title} to ${D.nice(date)}`, p => { p.overrides[key] = Object.assign({}, p.overrides[key] || {}, { date }); });
     },
@@ -181,7 +194,8 @@
     /* ---------- dialogs ---------- */
     openOcc(key) {
       const o = this.data.byKey[key]; if (!o) return;
-      if (this.isPast(o.date)) { toast('This day is over, so it can no longer be changed. Add a remark on the Today page.'); return; }
+      if (!this.editing) { this.showOcc(o); return; }
+      if (this.isPast(o.date)) { toast('This day is over, so it can no longer be changed. Add a remark in Edit → Daily entries.'); return; }
       if (o.carried) { toast(`Carried over from ${D.nice(o.carriedFrom)} (leave). Cancel the leave on that day to put it back.`); return; }
       const plan = Store.plan, isExtra = key.startsWith('x:'), t = isExtra ? null : this.task(o.taskId);
       const clashes = this.data.iss.filter(i => i.level === 'clash' && (i.keys || []).includes(key));
@@ -242,6 +256,21 @@
       });
     },
 
+    /* Read-only details, shown on the view pages */
+    showOcc(o) {
+      const rows = o.people.map(pid => `<li>${this.who(pid)} <span>${esc(this.personLabel(o, pid))}</span> <b>${esc(this.timeText(o, pid))}</b> ${this.impBadge(this.imp(o.key, pid))}</li>`).join('');
+      modal({
+        title: o.title,
+        body: `<p class="muted">${this.typeTag(o.type)} ${esc(D.nice(o.date, { long: true }))}${o.shifted ? `. Moved from ${D.nice(o.planned)}` : ''}${o.carried ? `. Carried over from ${D.nice(o.carriedFrom)} (leave)` : ''}</p>
+          ${rows ? `<ul class="list">${rows}</ul>` : '<p class="free">Nobody</p>'}
+          ${o.away && o.away.length ? `<p class="note">Out of station: ${o.away.map(p => esc(this.pname(p))).join(', ')}</p>` : ''}
+          ${o.onLeave && o.onLeave.length ? `<p class="note">On leave: ${o.onLeave.map(p => esc(this.pname(p))).join(', ')}</p>` : ''}
+          ${o.details ? `<p class="muted small">${esc(o.details)}</p>` : ''}`,
+        foot: `<span class="spacer"></span><button type="button" class="btn ghost" data-close>Close</button>${this.isPast(o.date) ? '' : '<button type="button" class="btn primary" id="occ-edit">Change in Edit</button>'}`,
+        onOpen: m => { const b = $('#occ-edit', m); if (b) b.onclick = () => { closeModal(); App.pendingOpen = o.key; App.go('edit', { tab: 'day', date: o.date }); }; }
+      });
+    },
+
     addExtra(date, pid) {
       const plan = Store.plan, slots = this.data.gen.slots, minD = D.today() > plan.settings.start ? D.today() : plan.settings.start;
       date = date && date >= minD ? date : (this.defaultDate() >= minD ? this.defaultDate() : minD);
@@ -259,7 +288,7 @@
           <div class="row2"><label>Kind<select name="type">${Object.keys(TYPES).map(k => `<option value="${k}" ${k === 'office' ? 'selected' : ''}>${TYPES[k].label}</option>`).join('')}</select></label>
           <label>Company<select name="company"><option value="">None</option>${companyOptions('')}</select></label></div>
           <label class="check"><input type="checkbox" name="noSite"> Office work: no site measurement for these people that day</label>
-          ${App.bOn() ? `<label>Importance<select name="importance"><option value="">Not set</option>${Object.keys(App.IMP).map(k => `<option value="${k}">${App.IMP[k].label}</option>`).join('')}</select></label>` : ''}</form>`,
+          ${true ? `<label>Importance<select name="importance"><option value="">Not set</option>${Object.keys(App.IMP).map(k => `<option value="${k}">${App.IMP[k].label}</option>`).join('')}</select></label>` : ''}</form>`,
         foot: `<span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" form="x-form" class="btn primary">Add</button>`,
         onOpen: m => {
           const sel = $('#x-slot', m), f = $('#x-form', m);
@@ -270,6 +299,7 @@
             if (T.m(fd.get('end')) <= T.m(fd.get('start'))) { toast('The end time must be after the start time.'); return; }
             if (App.isPast(fd.get('date'))) { toast('Pick today or a later day.'); return; }
             if (Engine.inGap(fd.get('start'), plan.settings)) { toast(`Start inside a working slot: ${App.slotsText()}.`); return; }
+            if ((fd.get('type') === 'site' || fd.get('type') === 'outstation') && fd.get('company')) { const wm = Engine.windowProblem(plan, fd.get('company'), fd.get('date')); if (wm) { toast(wm); return; } }
             const x = { id: 'e' + Date.now().toString(36), title: fd.get('title'), date: fd.get('date'), start: fd.get('start'), end: fd.get('end'), type: fd.get('type'), people: fd.getAll('pp'), companies: fd.get('company') ? [fd.get('company')] : [], details: '', noSite: !!fd.get('noSite'), importance: fd.get('importance') || '' };
             closeModal(); App.commit(`Added ${x.title}, ${D.nice(x.date)}. Other work moved around it.`, p => p.extra.push(x));
           };
@@ -292,8 +322,11 @@
           <label data-for="monthly">If the date is a holiday<select name="holiday"><option value="shift" ${t.holiday !== 'skip' ? 'selected' : ''}>Move to the next working day</option><option value="skip" ${t.holiday === 'skip' ? 'selected' : ''}>Skip it</option></select></label>
           <fieldset><legend>Who</legend>${this.peoplePicker('pp', Engine.normPeople(plan, t.people))}</fieldset>
           <label class="check"><input type="checkbox" name="noSite" ${t.noSite ? 'checked' : ''}> Office work: these people do no site measurement on these days</label>
-          ${t.siteGroup ? `<label class="check"><input type="checkbox" name="fillDays" ${t.fillDays ? 'checked' : ''}> Each person measures one of their own companies on every day of this run</label>` : ''}
-          ${App.bOn() ? `<label>Importance (set by B)<select name="importance"><option value="">Not set</option>${Object.keys(App.IMP).map(k => `<option value="${k}" ${t.importance === k ? 'selected' : ''}>${App.IMP[k].label}</option>`).join('')}</select></label>` : (t.importance ? `<p class="muted small">Importance: ${App.IMP[t.importance].label} (B can change it in B mode)</p>` : '')}
+          ${t.siteGroup ? `<label>How companies are given out in this run<select name="assign">
+            <option value="perRun" ${t.assign === 'perRun' ? 'selected' : ''}>One company for the whole run; the next company in the next run</option>
+            <option value="perDay" ${t.assign === 'perDay' ? 'selected' : ''}>One company per day, one after the other</option>
+            <option value="each" ${!t.assign || t.assign === 'each' ? 'selected' : ''}>Each company on its own day (then sheet work)</option></select></label>` : ''}
+          ${true ? `<label>Importance (set by B)<select name="importance"><option value="">Not set</option>${Object.keys(App.IMP).map(k => `<option value="${k}" ${t.importance === k ? 'selected' : ''}>${App.IMP[k].label}</option>`).join('')}</select></label>` : (t.importance ? `<p class="muted small">Importance: ${App.IMP[t.importance].label} (B can change it in B mode)</p>` : '')}
           <label>Details<textarea name="details" rows="2">${esc(t.details || '')}</textarea></label></form>`,
         foot: `${!isNew ? '<button type="button" class="btn ghost danger" id="t-del">Delete</button>' : ''}<span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" form="t-form" class="btn primary">Save</button>`,
         onOpen: m => {
@@ -303,8 +336,8 @@
             e.preventDefault(); const fd = new FormData(e.target);
             if (T.m(fd.get('end')) <= T.m(fd.get('start'))) { toast('The end time must be after the start time.'); return; }
             Object.assign(t, { title: fd.get('title'), type: fd.get('type'), mode: fd.get('mode'), start: fd.get('start'), end: fd.get('end'), days: fd.getAll('days').map(Number), perWeek: Number(fd.get('perWeek')) || 2, holiday: fd.get('holiday'), people: fd.getAll('pp'), details: fd.get('details'), noSite: !!fd.get('noSite') });
-            if (t.siteGroup) t.fillDays = !!fd.get('fillDays');
-            if (App.bOn()) t.importance = fd.get('importance') || '';
+            if (t.siteGroup) t.assign = fd.get('assign') || 'each';
+            t.importance = fd.get('importance') || '';
             if (Engine.inGap(t.start, plan.settings)) { toast(`Start inside a working slot: ${App.slotsText()}.`); return; }
             if (t.mode === 'monthly' && !t.days.length) { toast('Tick at least one date.'); return; }
             closeModal(); App.commit(`Saved ${t.title}`, p => { const i = p.tasks.findIndex(x => x.id === t.id); if (i >= 0) p.tasks[i] = t; else p.tasks.push(t); });
@@ -317,7 +350,7 @@
     editVisit(vkey) {
       const v = this.data.gen.visits.find(x => x.key === vkey); if (!v) return;
       if (this.isPast(v.date)) { toast('This site day is over. Add a remark on the Today page.'); return; }
-      const days = this.data.gen.occs.filter(o => o.runKey === v.runKey && o.people.includes(v.person) && !this.isPast(o.date));
+      const days = this.data.gen.occs.filter(o => o.runKey === v.runKey && o.people.includes(v.person) && !this.isPast(o.date) && !Engine.windowProblem(Store.plan, v.company, o.date));
       modal({
         title: `${this.cname(v.company)}: site day`,
         body: `<p class="muted">${esc(this.pname(v.person))}, ${esc(this.task(v.taskId).title)}. Pick the day for this company.</p>
