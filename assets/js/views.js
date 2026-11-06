@@ -9,7 +9,7 @@
 
   /* ---------- shared bits ---------- */
   /* Links stay inside the Edit area when the page is shown there */
-  const EDIT_TAB = { today: 'day', week: 'week', company: 'company', meetings: 'meetings', billing: 'billing' };
+  const EDIT_TAB = { today: 'day', week: 'week', company: 'companies', meetings: 'plan', billing: 'day' };
   function link(view, params) {
     if (!App.editing) return `#/${view}${params ? '?' + new URLSearchParams(params).toString() : ''}`;
     return `#/edit?${new URLSearchParams(Object.assign({ tab: EDIT_TAB[view] || App.route.params.tab || 'day' }, params || {})).toString()}`;
@@ -187,7 +187,14 @@
           <a class="btn ghost" href="${link('week', { w: D.weekStart(App.defaultDate()) })}">This week</a>
           <a class="round ${next > st.end ? 'off' : ''}" href="${link('week', { w: next })}" aria-label="Next week">${icon('right')}</a></div>${printBtn('week')}</div></header>
         ${ed ? `<p class="hint">Drag work to another day to move it, or onto another person on the same day to hand it over. Click work to change its time or people. Work is fitted into ${esc(App.slotsText())}; meetings are before ${esc(T.s(App.data.gen.slots[0][0]))}.</p>` : ''}
-        <div class="scroll"><table class="week"><thead><tr><th></th>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+        <div class="scroll ${ed ? '' : 'week-table'}"><table class="week"><thead><tr><th></th>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+        ${ed ? '' : `<div class="week-list">${days.map(d => {
+          const inWin = d >= st.start && d <= st.end, hol = data.gen.hol[d];
+          const lines = !inWin ? '<p class="free">Outside this timetable</p>' : hol ? `<p class="free">${esc(hol)}</p>` : plan.people.map(person => {
+            const list = (data.gen.sched[person.id + '|' + d] || []).filter(e => e.o.type !== 'review').map(e => e.o);
+            const what = App.onLeave(person.id, d) ? '<span class="offday leave">On leave</span>' : list.length ? list.map(o => App.pill(o, person.id)).join('') : `<span class="offday">${Engine.personOff(plan, person.id, d) ? 'Day off' : D.dow(d) === 0 ? 'Sunday' : 'Free'}</span>`;
+            return `<div class="wl-row">${App.avatar(person.id, 'sm')}<div class="wl-what">${what}</div></div>`; }).join('');
+          return `<article class="card wl-day ${App.isPast(d) ? 'past' : ''}"><h3><a href="#/today?date=${d}">${esc(D.nice(d, { long: true }))}</a></h3>${lines}</article>`; }).join('')}</div>`}
         <ul class="key">${Object.keys(App.TYPES).filter(k => k !== 'review').map(k => `<li><span style="background:${App.TYPES[k].color}"></span>${App.TYPES[k].label}</li>`).join('')}</ul>
       </section>`;
     }
@@ -328,8 +335,12 @@
       const opts = Object.keys(App.GROUPS).map(gk => `<optgroup label="${App.GROUPS[gk]}">${plan.companies.filter(x => x.group === gk).map(x => `<option value="${esc(x.id)}" ${x.id === c.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('');
       return `<section><header class="head"><div><h1>${esc(c.name)}: ${monthName(m)}</h1><p class="muted">${esc(App.GROUPS[c.group])}. ${owners.length ? 'Measured by ' + owners.map(x => esc(x.name)).join(' and ') : 'Nobody assigned'}.</p></div>
           <div class="acts noprint"><select id="co-pick" class="pick-sel" aria-label="Company">${opts}</select>${printBtn('company')}</div></header>
+        ${ed ? `<div class="card co-set"><div class="co-set-row"><span class="muted small">Name</span><input class="co-name" data-cname="${esc(c.id)}" value="${esc(c.name)}" aria-label="Company name"></div>
+          <div class="co-set-row"><span class="muted small">Measured by</span><span class="chipset">${plan.people.map(x => `<label class="pick sm" style="--pc:${x.color}"><input type="checkbox" data-resp="${esc(c.id)}|${esc(x.id)}" ${((plan.responsibilities[x.id] || {})[c.group] || []).includes(c.id) ? 'checked' : ''}><span>${esc(x.name)}</span></label>`).join('')}</span>
+          <label class="check small"><input type="checkbox" data-tog="${esc(c.id)}" ${c.together ? 'checked' : ''}> together on the same day</label>
+          <button type="button" class="btn ghost sm danger" data-rmco="${esc(c.id)}">${icon('trash')}Remove company</button></div>
+          <p class="muted small">Click a site measurement to move it to another day of its run. Follow-up points are saved when you leave the box.</p></div>` : ''}
         ${monthTabs('company', m, { id: c.id })}
-        ${ed ? '<p class="hint">Click a site measurement to move it to another day of its run. Follow-up points are saved when you leave the box.</p>' : ''}
         <div class="scroll"><table class="tbl co-tbl"><thead><tr><th>Date</th><th>Time</th><th>Work</th><th>Who</th><th>Importance</th><th>6 pm follow-up points</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
     },
     mount(root, p) {
@@ -425,5 +436,5 @@
     }
   };
 
-  Object.assign(App, { companyEntries, monthName, listDates, pickMonth });
+  Object.assign(App, { companyEntries, monthName, listDates, pickMonth, reviewCard });
 })();

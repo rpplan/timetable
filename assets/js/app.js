@@ -119,7 +119,12 @@
       this.route = { view: this.views[v] ? v : 'today', params: Object.fromEntries(new URLSearchParams(q || '')) };
     },
     /* Short description shown above every page: what it does and what it is for */
-    intro(d) { return d ? `<aside class="intro noprint"><p><b>${esc(d.what)}</b></p><p>${esc(d.why)}</p>${d.edit ? `<p class="intro-edit">${esc(d.edit)}</p>` : ''}</aside>` : ''; },
+    /* One line; tap "About this page" for the purpose */
+    intro(d) {
+      if (!d) return '';
+      const [name, ...rest] = d.what.split(': ');
+      return `<details class="intro noprint"><summary><b>${esc(name)}</b><span class="intro-what">${esc((t => t.charAt(0).toUpperCase() + t.slice(1))(rest.join(': ') || d.what))}</span><span class="intro-more">About this page</span></summary><p>${esc(d.why)}</p>${d.edit ? `<p class="intro-edit">${esc(d.edit)}</p>` : ''}</details>`;
+    },
     render() {
       if (!Store.plan) return;
       this.compute();

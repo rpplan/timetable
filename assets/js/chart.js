@@ -7,14 +7,16 @@
   const { D, T } = Engine;
   const { esc, $, $$, icon, toast, modal, closeModal } = UI;
   const V = App.views;
-  const W = 1000, H = 720, NW = 168, NH = 38, PW = 184, PH = 50;
-  const REG = {
-    people: { x: 16, y: 16, w: 220, h: 500, label: 'Employees' },
-    office: { x: 16, y: 532, w: 220, h: 172, label: 'Office & meetings' },
-    main: { x: 256, y: 16, w: 728, h: 180, label: 'Main contractors' },
-    outstation: { x: 256, y: 212, w: 728, h: 160, label: 'Outstation sites' },
-    other: { x: 256, y: 388, w: 728, h: 316, label: 'Other contractors' }
+  /* Two layouts: wide (laptop, employees on the left) and tall (phone, employees on top). The chart is sized to the window. */
+  const LABEL = { people: 'Employees', office: 'Office & meetings', main: 'Main contractors', outstation: 'Outstation sites', other: 'Other contractors' };
+  const LAYOUTS = {
+    wide: { W: 1200, H: 600, pw: 180, ph: 46, nw: 172, nh: 34, cols: { people: 1, office: 1, main: 5, outstation: 5, other: 5 },
+      REG: { people: { x: 12, y: 12, w: 208, h: 420 }, office: { x: 12, y: 444, w: 208, h: 144 }, main: { x: 232, y: 12, w: 956, h: 150 }, outstation: { x: 232, y: 174, w: 956, h: 150 }, other: { x: 232, y: 336, w: 956, h: 252 } } },
+    tall: { W: 600, H: 1180, pw: 176, ph: 46, nw: 270, nh: 36, cols: { people: 3, office: 2, main: 2, outstation: 2, other: 2 },
+      REG: { people: { x: 8, y: 8, w: 584, h: 150 }, office: { x: 8, y: 168, w: 584, h: 86 }, main: { x: 8, y: 264, w: 584, h: 200 }, outstation: { x: 8, y: 474, w: 584, h: 200 }, other: { x: 8, y: 684, w: 584, h: 488 } } }
   };
+  let L = LAYOUTS.wide, REG = L.REG;
+  const posKey = () => L === LAYOUTS.tall ? 'posTall' : 'pos';
   const OFFICE_NODES = [{ id: 'office', name: 'Office work' }, { id: 'meeting', name: 'Meetings' }];
   const state = { scale: 'half', idx: null, playing: false, speed: 700, timer: null, sel: null, drag: null };
 
@@ -71,17 +73,17 @@
   /* ---------- nodes & layout ---------- */
   function nodes() {
     const plan = Store.plan, out = [];
-    plan.people.forEach(p => out.push({ id: 'p:' + p.id, pid: p.id, region: 'people', name: p.name, color: p.color, w: PW, h: PH }));
-    OFFICE_NODES.forEach(n => out.push({ id: 'n:' + n.id, target: n.id, region: 'office', name: n.name, w: NW, h: NH }));
-    plan.companies.forEach(c => out.push({ id: 'c:' + c.id, target: c.id, region: c.group, name: c.name, w: NW, h: NH }));
+    plan.people.forEach(p => out.push({ id: 'p:' + p.id, pid: p.id, region: 'people', name: p.name, color: p.color, w: L.pw, h: L.ph }));
+    OFFICE_NODES.forEach(n => out.push({ id: 'n:' + n.id, target: n.id, region: 'office', name: n.name, w: L.nw, h: L.nh }));
+    plan.companies.filter(c => REG[c.group]).forEach(c => out.push({ id: 'c:' + c.id, target: c.id, region: c.group, name: c.name, w: L.nw, h: L.nh }));
     const count = {}; out.forEach(n => { count[n.region] = (count[n.region] || 0) + 1; });
     const seen = {};
     out.forEach(n => {
       const r = REG[n.region], i = (seen[n.region] = (seen[n.region] || 0) + 1) - 1;
-      const cols = n.region === 'people' || n.region === 'office' ? 1 : 4, rows = Math.ceil(count[n.region] / cols);
+      const cols = L.cols[n.region], rows = Math.ceil(count[n.region] / cols);
       const cw = (r.w - 16) / cols, rh = Math.min(84, (r.h - 34) / Math.max(1, rows));
       const def = [r.x + 8 + cw * (i % cols) + cw / 2, r.y + 30 + rh * Math.floor(i / cols) + rh / 2];
-      const s = (plan.chart.pos || {})[n.id];
+      const s = (plan.chart[posKey()] || {})[n.id];
       n.x = s ? clampX(n, s[0]) : def[0]; n.y = s ? clampY(n, s[1]) : def[1];
     });
     return out;
@@ -92,12 +94,14 @@
 
   /* ---------- drawing ---------- */
   function draw(root) {
+    const cv = $('.lc-canvas', root); L = cv && cv.clientWidth && cv.clientWidth < 640 ? LAYOUTS.tall : LAYOUTS.wide; REG = L.REG;
     const list = steps(); if (state.idx == null || state.idx >= list.length) state.idx = defaultIdx(list);
     const step = list[state.idx], ns = nodes(), byId = {}; ns.forEach(n => { byId[n.id] = n; });
     const links = linksAt(step);
     const tgt = t => byId['c:' + t] || byId['n:' + t];
     const path = l => {
       const a = byId['p:' + l.pid], b = tgt(l.node); if (!a || !b) return '';
+      if (L === LAYOUTS.tall) { const x1 = a.x, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y - b.h / 2, my = (y1 + y2) / 2; return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`; }
       const x1 = a.x + a.w / 2, y1 = a.y;
       if (b.region === 'office') { const x2 = b.x + b.w / 2, y2 = b.y; return `M${x1},${y1} C${x1 + 70},${y1} ${x2 + 70},${y2} ${x2},${y2}`; }
       const x2 = b.x - b.w / 2, y2 = b.y, mx = (x1 + x2) / 2;
@@ -105,7 +109,8 @@
     };
     const active = new Set(links.map(l => 'c:' + l.node).concat(links.map(l => 'n:' + l.node), links.map(l => 'p:' + l.pid)));
     const svg = $('#lc-svg', root);
-    svg.innerHTML = `${Object.keys(REG).map(k => { const r = REG[k]; return `<g class="reg reg-${k}"><rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="14"/><text x="${r.x + 12}" y="${r.y + 19}">${esc(r.label)}<tspan class="rd">${k === 'main' || k === 'other' || k === 'outstation' ? esc(dayNote(k)) : ''}</tspan></text></g>`; }).join('')}
+    svg.setAttribute('viewBox', `0 0 ${L.W} ${L.H}`); svg.classList.toggle('tall', L === LAYOUTS.tall);
+    svg.innerHTML = `${Object.keys(REG).map(k => { const r = REG[k]; return `<g class="reg reg-${k}"><rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="14"/><text x="${r.x + 12}" y="${r.y + 19}">${esc(LABEL[k])}<tspan class="rd">${k === 'main' || k === 'other' || k === 'outstation' ? esc(dayNote(k)) : ''}</tspan></text></g>`; }).join('')}
       <g class="links">${links.map(l => { const ty = App.TYPES[l.type] || App.TYPES.office; const n = l.items.length; return `<path class="lk ${state.sel === l.key ? 'sel' : ''} ${state.playing ? 'flow' : ''}" d="${path(l)}" data-link="${esc(l.key)}" style="--c:${ty.color};stroke-width:${Math.min(9, 2.5 + (step.kind === 'half' ? 0 : Math.log2(n) * 1.6))}"><title>${esc(App.pname(l.pid))} → ${esc(l.items[0].label)}${n > 1 ? ` (${n})` : ''}</title></path>`; }).join('')}</g>
       <g class="nodes">${ns.map(n => {
         const on = active.has(n.id), st = n.pid ? statusAt(step, n.pid) : '';
@@ -114,7 +119,7 @@
           <rect x="${-n.w / 2}" y="${-n.h / 2}" width="${n.w}" height="${n.h}" rx="${n.pid ? 12 : 9}"/>
           ${n.pid ? `<circle class="av-c" cx="${-n.w / 2 + 22}" cy="0" r="14"/><text class="av-t" x="${-n.w / 2 + 22}" y="4">${esc(n.pid)}</text>
             <text class="nm" x="${-n.w / 2 + 44}" y="-4">${esc(short(n.name, 14))}</text><text class="sub" x="${-n.w / 2 + 44}" y="12">${esc(short(st || (step.kind === 'month' ? `${links.filter(l => l.pid === n.pid).length} places` : now[0] || 'Free'), 22))}</text>
-            <circle class="port" cx="${n.w / 2}" cy="0" r="8" data-port="${esc(n.pid)}"><title>Drag onto a company to give ${esc(n.name)} work</title></circle>`
+            <circle class="port" cx="${L === LAYOUTS.tall ? 0 : n.w / 2}" cy="${L === LAYOUTS.tall ? n.h / 2 : 0}" r="${L === LAYOUTS.tall ? 11 : 8}" data-port="${esc(n.pid)}"><title>Drag onto a company to give ${esc(n.name)} work</title></circle>`
             : `<text class="nm" x="0" y="4" text-anchor="middle">${esc(short(n.name, 22))}</text><title>${esc(n.name)}</title>`}</g>`;
       }).join('')}</g><path id="lc-rubber" class="rubber" d=""/>`;
     $('#lc-when', root).textContent = step.label;
@@ -123,7 +128,18 @@
     $('#lc-note', root).textContent = hol ? `Holiday: ${hol}` : !links.length ? (step.kind === 'half' ? 'Nobody is booked in this half hour.' : 'Nothing booked.') : `${links.length} link${links.length > 1 ? 's' : ''}`;
     panel(root, links, step);
     bindSvg(root, ns, byId, step);
+    fit(root);
   }
+  /* Wide layout: the whole chart fits in the window without scrolling; tall layout (phone): scrolls with the page */
+  function fit(root) {
+    const svg = $('#lc-svg', root), pnl = $('#lc-panel', root); if (!svg) return;
+    if (L === LAYOUTS.tall) { svg.style.maxHeight = ''; if (pnl) pnl.style.maxHeight = ''; return; }
+    const top = svg.getBoundingClientRect().top + window.scrollY;
+    const avail = Math.max(300, window.innerHeight - top - 16);
+    svg.style.maxHeight = avail + 'px'; if (pnl) pnl.style.maxHeight = (avail + 12) + 'px';
+  }
+  let resizeT = null;
+  window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { const r = document.querySelector('.lc'); if (r && App.route.view === 'chart') draw(document.getElementById('view')); }, 150); });
   function dayNote(group) { const d = Engine.windowDays(Store.plan, group); return d ? `  ·  days ${d.join(', ')}` : ''; }
 
   /* ---------- side panel: the selected line ---------- */
@@ -248,14 +264,14 @@
         d.g.setAttribute('transform', `translate(${d.n.x},${d.n.y})`);
         $$('[data-link]', svg).forEach(path => path.style.opacity = '.25');
       } else {
-        const a = d.from; $('#lc-rubber', svg).setAttribute('d', `M${a.x + a.w / 2},${a.y} L${p.x},${p.y}`);
+        const a = d.from, sx = L === LAYOUTS.tall ? a.x : a.x + a.w / 2, sy = L === LAYOUTS.tall ? a.y + a.h / 2 : a.y; $('#lc-rubber', svg).setAttribute('d', `M${sx},${sy} L${p.x},${p.y}`);
         $$('.nd.co', svg).forEach(x => x.classList.remove('hover'));
         const over = document.elementFromPoint(e.clientX, e.clientY); const g = over && over.closest('.nd.co'); if (g) g.classList.add('hover');
       }
     };
     svg.onpointerup = e => {
       const d = state.drag; state.drag = null; if (!d) return;
-      if (d.kind === 'move') { if (d.moved) { Store.plan.chart.pos[d.n.id] = [Math.round(d.n.x), Math.round(d.n.y)]; Store.save(true); } draw(root); return; }
+      if (d.kind === 'move') { if (d.moved) { const k = posKey(); Store.plan.chart[k] = Store.plan.chart[k] || {}; Store.plan.chart[k][d.n.id] = [Math.round(d.n.x), Math.round(d.n.y)]; Store.save(true); } draw(root); return; }
       $('#lc-rubber', svg).setAttribute('d', '');
       const over = document.elementFromPoint(e.clientX, e.clientY); const g = over && over.closest('[data-node]');
       if (!g || g.dataset.node.startsWith('p:')) { draw(root); return; }
@@ -279,8 +295,7 @@
       why: 'To see the work move through the day, the month and between companies, and to give, hand over, remove or copy work by dragging and clicking.',
       edit: 'Changes made here are the same changes as in the Edit area; they show up on every page, in Excel and in the PDFs.' },
     render() {
-      return `<section class="lc"><header class="head"><h1>Link chart</h1>
-          <div class="acts noprint"><button type="button" class="btn ghost" id="lc-copyall">${icon('copy')}Copy this moment…</button><button type="button" class="btn ghost" id="lc-reset">Reset layout</button><button type="button" class="btn ghost" data-print="chart">${icon('print')}Print / save PDF</button></div></header>
+      return `<section class="lc"><h1 class="print-only">Link chart</h1>
         <div class="lc-bar noprint">
           <div class="seg" role="group" aria-label="Time scale">${[['half', 'Half hour'], ['day', 'Day'], ['month', 'Month']].map(([k, l]) => `<button type="button" data-scale="${k}" class="${state.scale === k ? 'on' : ''}">${l}</button>`).join('')}</div>
           <button type="button" class="round" id="lc-prev" aria-label="Back">${icon('left')}</button>
@@ -288,9 +303,10 @@
           <button type="button" class="round" id="lc-next" aria-label="Forward">${icon('right')}</button>
           <button type="button" class="btn primary" id="lc-play">${icon('play')}Play</button>
           <select id="lc-speed" aria-label="Speed"><option value="1200">Slow</option><option value="700" selected>Normal</option><option value="300">Fast</option></select>
+          <span class="lc-more"><button type="button" class="btn ghost sm" id="lc-copyall" title="Copy everything shown now to more days or hours">${icon('copy')}<span>Copy moment</span></button><button type="button" class="btn ghost sm" id="lc-reset" title="Put the boxes back in their places">Reset</button><button type="button" class="btn ghost sm" data-print="chart" title="Print / save PDF">${icon('print')}</button></span>
         </div>
         <div class="lc-when"><b id="lc-when"></b> <span class="muted small" id="lc-note"></span></div>
-        <div class="lc-grid"><div class="lc-canvas"><svg id="lc-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Link chart of employees and companies"></svg></div><aside class="card lc-panel" id="lc-panel"></aside></div>
+        <div class="lc-grid"><div class="lc-canvas"><svg id="lc-svg" viewBox="0 0 1200 600" role="img" aria-label="Link chart of employees and companies"></svg></div><aside class="card lc-panel" id="lc-panel"></aside></div>
         <ul class="key">${Object.keys(App.TYPES).filter(k => k !== 'review').map(k => `<li><span style="background:${App.TYPES[k].color}"></span>${App.TYPES[k].label}</li>`).join('')}</ul></section>`;
     },
     mount(root) {
@@ -310,7 +326,7 @@
       $('#lc-next', root).onclick = () => { stop(root); state.idx = Math.min(steps().length - 1, state.idx + 1); draw(root); };
       $('#lc-play', root).onclick = () => { if (state.playing) stop(root); else play(root); };
       sp.onchange = () => { state.speed = +sp.value; if (state.playing) { clearInterval(state.timer); play(root); } };
-      $('#lc-reset', root).onclick = () => App.commit('Chart layout reset', p => { p.chart.pos = {}; });
+      $('#lc-reset', root).onclick = () => App.commit('Chart layout reset', p => { p.chart.pos = {}; p.chart.posTall = {}; });
       $('#lc-copyall', root).onclick = () => {
         const step = steps()[state.idx]; if (step.kind === 'month') { toast('Choose the half hour or day scale to copy a moment.'); return; }
         const items = linksAt(step).flatMap(l => l.items.slice(0, 1)).filter(it => !App.isPast(it.date));

@@ -1,4 +1,4 @@
-# Works timetable (version 6)
+# Works timetable (version 7)
 
 The office timetable from **B_planning_of_works.xlsx**: who measures which company, outstation trips, billing and advance days, meetings, targets and points.
 A plain static website (no build step) for GitHub Pages. **Only B can open it**: nothing is shown until B logs in.
@@ -37,9 +37,9 @@ Only the light/dark choice is kept unencrypted. Backups (Edit → Excel & backup
 | Meetings | Dates, attendance and agendas with minutes. |
 | Billing days | P1 and B's time slots per company on advance and billing days. |
 | **Link chart** | Employees and companies as boxes and lines, with a time bar (half hour, day, month) and Play. Drag to arrange, drag from an employee's dot onto a company to give work, click a line to hand over, remove or copy it. |
-| **Edit** | Every input in one place: Daily entries, Week board, Company schedules, Billing days, Outstation trips, B admin, Repeating work, Meeting agendas, Who does which company, Hours/holidays/site windows, Problems, Records & points, Excel & backup, Login & saving. |
+| **Edit** | Every input in one place, in six sections: **Day** (leave, trip, importance, clearance, targets, billing ticks, remarks, B's check), **Week** (drag to move or hand over), **Companies** (who measures it, site days, importance, 6 pm follow-ups), **Plan** (repeating work and meeting agendas), **Settings** (hours, holidays, site windows, employees, points, records, Excel, backup, login), **B admin**. *Problems* appears only when there is one. |
 
-Every page has a short description at the top. Every change, wherever it is made, is used by all pages, the chart, Excel and the PDFs.
+Every page has a one-line description at the top; tap "About this page" for its purpose. Works on phones: the Week page becomes a day list, wide tables turn into cards, and the Link chart switches to a tall layout. On a laptop the Link chart fits the window. Every change, wherever it is made, is used by all pages, the chart, Excel and the PDFs.
 
 ## Rules built in
 

@@ -6,66 +6,133 @@
   const { esc, $, $$, icon, toast, modal, closeModal, confirmBox } = UI;
   const V = App.views;
 
-  /* Sub-pages, in three groups. Pages shared with the view side (Today, Week ...) are shown here with inputs. */
+  /* Six sections. Old addresses (#/edit?tab=billing etc.) lead to the section that now holds them. */
+  const OLD = { company: 'companies', billing: 'day', trips: 'day', work: 'plan', meetings: 'plan', who: 'settings', office: 'settings', records: 'settings', data: 'settings', security: 'settings' };
   const TABS = [
-    ['Every day', [
-      ['day', 'Daily entries', () => V.today, { what: 'Daily entries: leave, clearance forms, 7-day target ticks, importance, remarks, B\'s daily check, and adding work for one day.',
-        why: 'Fill this in every day. Past days are closed for changes to the timetable, but their status and remarks can still be written.' }],
-      ['week', 'Week board', () => V.week, { what: 'Week board: drag work to another day, or onto another person on the same day.',
-        why: 'For moving and handing over work. The rest of each person\'s day is fitted around it automatically.' }],
-      ['company', 'Company schedules', () => V.company, { what: 'Company schedules: one company for one month, every day, with importance and 6 pm follow-up points.',
-        why: 'Write the follow-up points at 6 pm, set importance, and move a company\'s site day inside its run.' }],
-      ['billing', 'Billing days', () => V.billing, { what: 'Billing days: tick each company on advance and billing days when it is done.',
-        why: 'So P1 and B can see what is still open on each advance or billing day.' }],
-      ['trips', 'Outstation trips', () => tripsPage, { what: 'Outstation trips: who goes on each trip.',
-        why: 'Switch someone off when they stay in town. People who go do not join meetings or in-town site work on those days.' }],
-      ['admin', 'B admin', () => adminPage, { what: 'B admin: B\'s private hourly schedule for Saturday, Sunday and Monday up to 12 noon, opened with B\'s pattern.',
-        why: 'For B\'s personal work, with importance and a done tick for each hour.' }]
-    ]],
-    ['The plan', [
-      ['work', 'Repeating work', () => workPage, { what: 'Repeating work: everything that comes back every month (site runs C-1, C-2, C-3, outstation, meetings, billing, advances, office work).',
-        why: 'Change the dates of the month, times, people, and how companies are given out in a site run.' }],
-      ['meetings', 'Meeting agendas', () => V.meetings, { what: 'Meeting agendas: items, minutes and who is responsible.',
-        why: '"Fit" spreads the minutes so the agenda fills the meeting exactly.' }],
-      ['who', 'Who does which company', () => whoPage, { what: 'Who does which company: the companies of each employee, names and weekly days off.',
-        why: 'The site days are worked out from this list.' }],
-      ['office', 'Hours, holidays & site windows', () => officePage, { what: 'Hours, holidays & site windows: the timetable dates, the two working slots, holidays, and which days of the month each company group may have site work.',
-        why: 'Main contractors only in the first and last part of the month, other contractors only in the middle, outstation only on trip days. Set the exact days here.' }]
-    ]],
-    ['Records & data', [
-      ['problems', 'Problems', () => problemsPage, { what: 'Problems: double bookings, work with no free slot, site days outside their window or target, and moved work.',
-        why: 'Click "Fix" to open the work and change it.' }],
-      ['records', 'Records & points', () => recordsPage, { what: 'Records & points: the 45-day clean-up, points per tick, and deleting B\'s own records.',
-        why: 'B\'s records are never deleted unless B deletes them here.' }],
-      ['data', 'Excel & backup', () => dataPage, { what: 'Excel & backup: download everything as Excel, save or load a backup, or load the starting plan again.',
-        why: 'The Excel file has filters for sorting by person, company, date and kind of work.' }],
-      ['security', 'Login & saving', () => securityPage, { what: 'Login & saving: where the data is saved, the password, and the automatic log-off time.',
-        why: 'The website shows nothing until B logs in, and logs off by itself.' }]
-    ]]
+    ['day', 'Day', () => dayPage, { what: 'Day: everything to fill in for one day.', why: 'Leave, outstation trip, importance, clearance forms, 7-day target ticks, billing ticks, remarks and B\'s daily check, person by person. Past days: only status and remarks.' }],
+    ['week', 'Week', () => V.week, { what: 'Week: move or hand over work.', why: 'Drag work to another day, or onto another person on the same day. Click work to change its time or people.' }],
+    ['companies', 'Companies', () => companiesTab, { what: 'Companies: one company at a time.', why: 'Who measures it, its site days, importance, and the 6 pm follow-up points for every day of the month.' }],
+    ['plan', 'Plan', () => planPage, { what: 'Plan: the work that repeats every month.', why: 'Site runs C-1, C-2, C-3, outstation trips, meetings with their agendas, billing, advances and office work.' }],
+    ['settings', 'Settings', () => settingsPage, { what: 'Settings: set once, change rarely.', why: 'Hours and holidays, site windows, employees, who measures what, points and records, Excel and backup, login.' }],
+    ['admin', 'B admin', () => adminPage, { what: 'B admin: B\'s private hourly schedule.', why: 'Saturday, Sunday and Monday up to 12 noon, opened with B\'s pattern.' }],
+    ['problems', 'Problems', () => problemsPage, { what: 'Problems: things that need a decision.', why: 'Double bookings, work with no free slot, site days outside their window or target. Click "Fix" to open the work.' }]
   ];
-  const ALL = TABS.flatMap(g => g[1]);
 
   V.edit = {
     title: 'Edit', editing: true,
     render(p) {
-      const tab = ALL.find(t => t[0] === p.tab) || ALL[0];
+      const want = OLD[p.tab] || p.tab;
+      const tab = TABS.find(t => t[0] === want) || TABS[0];
       const sub = tab[2]();
       const nProb = App.data.iss.filter(i => i.level !== 'info').length;
-      const nav = `<nav class="edit-nav noprint">${TABS.map(([g, list]) => `<div class="en-group"><span>${esc(g)}</span>${list.map(([k, l]) => `<a href="#/edit?tab=${k}" class="${k === tab[0] ? 'on' : ''}">${esc(l)}${k === 'problems' && nProb ? ` <i class="n">${nProb}</i>` : ''}</a>`).join('')}</div>`).join('')}</nav>`;
-      return `<div class="edit-wrap">${nav}<div class="edit-body">${App.intro(tab[3])}${sub.render(p)}</div></div>`;
+      const nav = `<nav class="tabs plain edit-tabs noprint">${TABS.filter(t => t[0] !== 'problems' || nProb || tab[0] === 'problems').map(([k, l]) => `<a href="#/edit?tab=${k}" class="${k === tab[0] ? 'on' : ''} ${k === 'problems' ? 'prob' : ''}">${esc(l)}${k === 'problems' ? ` <i class="n">${nProb}</i>` : ''}</a>`).join('')}</nav>`;
+      return `${nav}${App.intro(tab[3])}${sub.render(p)}`;
     },
-    mount(root, p) { const tab = ALL.find(t => t[0] === p.tab) || ALL[0]; const sub = tab[2](); if (sub.mount) sub.mount(root, p); }
+    mount(root, p) { const want = OLD[p.tab] || p.tab; const tab = TABS.find(t => t[0] === want) || TABS[0]; const sub = tab[2](); if (sub.mount) sub.mount(root, p); }
   };
 
-  /* ---------- Outstation trips ---------- */
-  const tripsPage = {
-    render() {
-      const runs = App.outstationRuns(); const by = {};
-      runs.forEach(r => { (by[r.runKey] = by[r.runKey] || []).push(r); });
-      return `<section>${Object.keys(by).map(rk => { const l = by[rk]; return `<article class="card"><h2>${esc(l[0].task.title)}: ${esc(App.listDates(l[0].days))}</h2>
-        <ul class="trips">${l.map(r => `<li><label class="switch"><input type="checkbox" data-trip="${esc(r.runKey)}|${esc(r.person)}" ${r.going ? 'checked' : ''} ${r.days.every(d => App.isPast(d)) ? 'disabled' : ''}><span></span></label><div><b>${esc(App.pname(r.person))}</b><small>${r.going ? 'Goes outstation. Skips meetings on these days.' : 'Stays in town.'}</small></div></li>`).join('')}</ul></article>`; }).join('') || '<p class="free">No outstation trips in this timetable.</p>'}</section>`;
+  /* ---------- Day: one compact form per employee ---------- */
+  const dayPage = {
+    render(p) {
+      const plan = Store.plan, data = App.data, st = plan.settings;
+      const date = p.date && p.date >= st.start && p.date <= st.end ? p.date : App.defaultDate();
+      const hol = data.gen.hol[date], past = App.isPast(date), today = date === D.today(), prev = D.add(date, -1), next = D.add(date, 1);
+      const clashes = data.iss.filter(i => i.level === 'clash' && i.date === date);
+      const cards = plan.people.map(x => personCard(x, date, hol, past, today)).join('');
+      const pays = data.gen.occs.filter(o => o.date === date && (o.type === 'advance' || o.type === 'billing')).map(o => {
+        const rows = Engine.slotPlan(plan, o, App.STEPS[o.type], data.gen), checks = plan.reviews.pay || {};
+        return `<article class="card ed-pay"><h3>${esc(o.title)} <span class="count">${rows.filter(r => checks[o.key + '|' + r.company]).length} of ${rows.length} done</span></h3>
+          <div class="chipset">${rows.map(r => { const k = o.key + '|' + r.company; return `<label class="tchip ${checks[k] ? 'on' : ''}"><input type="checkbox" data-pay="${esc(k)}" ${checks[k] ? 'checked' : ''}><span>${esc(r.company === 'general' ? 'All works' : App.cname(r.company))}</span><small>${esc(r.text)}</small></label>`; }).join('')}</div></article>`;
+      }).join('');
+      return `<section class="ed-day">
+        <div class="ed-dayhead"><div class="nav-date"><a class="round ${prev < st.start ? 'off' : ''}" href="#/edit?tab=day&date=${prev}" aria-label="Previous day">${icon('left')}</a>
+          <input type="date" value="${date}" min="${st.start}" max="${st.end}" id="ed-date" aria-label="Choose a day">
+          <a class="round ${next > st.end ? 'off' : ''}" href="#/edit?tab=day&date=${next}" aria-label="Next day">${icon('right')}</a></div>
+          <b class="ed-daytitle">${esc(D.nice(date, { long: true }))}${today ? ' · today' : ''}</b>
+          ${!past && !hol ? `<button type="button" class="btn primary sm" data-add="${date}">${icon('plus')}Add work</button>` : ''}</div>
+        ${hol ? `<p class="banner">Holiday: ${esc(hol)}</p>` : ''}
+        ${past ? '<p class="banner past-b">This day is over: only the status and remarks can be filled in.</p>' : ''}
+        ${clashes.map(c => `<p class="banner warn">${esc(c.text)}</p>`).join('')}
+        <div class="ed-grid">${cards}</div>
+        ${pays}
+        ${!hol ? App.reviewCard(date) : ''}</section>`;
     },
-    mount(root) { $$('[data-trip]', root).forEach(c => c.onchange = () => { const [rk, pid] = c.dataset.trip.split('|'); App.setAway(rk, pid, c.checked); }); }
+    mount(root, p) {
+      const st = Store.plan.settings, date = p.date && p.date >= st.start && p.date <= st.end ? p.date : App.defaultDate();
+      const d = $('#ed-date', root); if (d) d.onchange = () => { if (d.value) App.go('edit', { tab: 'day', date: d.value }); };
+      $$('[data-rv]', root).forEach(c => c.onchange = () => { const r = Store.plan.reviews; r.days = r.days || {}; const b = (r.days[date] = r.days[date] || {});
+        if (c.checked) b[c.dataset.rv] = true; else delete b[c.dataset.rv]; Store.save(true); App.keepScroll = true; App.render(); });
+      $$('[data-pay]', root).forEach(c => c.onchange = () => { const r = Store.plan.reviews; r.pay = r.pay || {}; if (c.checked) r.pay[c.dataset.pay] = true; else delete r.pay[c.dataset.pay]; Store.save(true); App.keepScroll = true; App.render(); });
+      $$('[data-trip]', root).forEach(c => c.onchange = () => { const [rk, pid] = c.dataset.trip.split('|'); App.setAway(rk, pid, c.checked); });
+    }
+  };
+  function personCard(x, date, hol, past, today) {
+    const data = App.data, pid = x.id, isB = App.isB(pid);
+    const list = (data.gen.sched[pid + '|' + date] || []).filter(e => e.o.type !== 'review');
+    const leave = App.onLeave(pid, date), off = Engine.personOff(Store.plan, pid, date) && !list.length;
+    const w = App.whereLabel(date, pid);
+    const trip = App.outstationRuns(pid).find(r => r.days.includes(date));
+    const canLeave = !isB && !past && !hol && !off;
+    const tg = today && !isB ? App.openTargets(pid) : [];
+    const head = `<header>${App.avatar(pid)}<b>${esc(x.name)}</b><span class="where w-${w.k}">${esc(w.text)}</span>
+      <span class="ed-hchips">${trip && !past ? `<label class="tchip sm ${trip.going ? 'on' : ''}" title="Goes on the outstation trip ${esc(App.listDates(trip.days))}"><input type="checkbox" data-trip="${esc(trip.runKey)}|${esc(pid)}" ${trip.going ? 'checked' : ''}><span>Outstation</span></label>` : ''}
+      ${canLeave ? `<button type="button" class="tchip sm leave ${leave ? 'on' : ''}" data-leave="${esc(pid)}|${date}|${leave ? '0' : '1'}">${leave ? '✓ On leave' : 'On leave'}</button>` : ''}</span></header>`;
+    let body;
+    if (hol) body = '<p class="free">Holiday</p>';
+    else if (leave) body = '<p class="free leave-note">On leave: this day\'s work moves to the next working day.</p>';
+    else if (!list.length) body = `<p class="free">${off ? 'Weekly day off' : 'Nothing planned'}</p>`;
+    else body = `<ul class="ed-rows">${list.map(e => {
+      const ty = App.TYPES[e.o.type] || App.TYPES.office, k = e.key + '|' + pid, r = Store.plan.remarks[k] || {};
+      const cf = !isB && e.o.type !== 'meeting' && date <= D.today();
+      return `<li style="--c:${ty.color}"><div class="ed-top"><span class="tm">${esc(e.noTime ? 'No free slot' : Engine.partsText(e.parts))}</span>${past ? `<span class="ed-name">${esc(App.personLabel(e.o, pid))}</span>` : `<button type="button" class="link ed-name" data-occ="${esc(e.key)}">${esc(App.personLabel(e.o, pid))}</button>`}</div>
+        <div class="ed-ctl">${e.o.type !== 'meeting' ? App.impControl(e.key, pid) : ''}${cf ? `<button type="button" class="tchip sm ${Store.plan.clear[k] ? 'on' : ''}" data-cf="${esc(k)}">${Store.plan.clear[k] ? '✓ ' : ''}Clearance form</button>` : ''}</div>
+        ${date <= D.today() ? `<div class="rmk"><select data-rs="${esc(k)}" aria-label="Status"><option value="">Status…</option>${Object.keys(App.REMARK_LABELS).map(s => `<option value="${s}" ${r.s === s ? 'selected' : ''}>${App.REMARK_LABELS[s]}</option>`).join('')}</select><input data-rt="${esc(k)}" value="${esc(r.t || '')}" placeholder="Remark"></div>` : ''}</li>`;
+    }).join('')}</ul>`;
+    const tgts = tg.length ? `<div class="ed-tg"><span class="muted small">7-day target, tick when measured in time:</span>${tg.map(v => App.targetRow(v)).join('')}</div>` : '';
+    return `<article class="card ed-person ${past ? 'past' : ''}" style="--pc:${x.color}">${head}${body}${tgts}</article>`;
+  }
+
+  /* ---------- Companies: one company, with who measures it ---------- */
+  const companiesTab = {
+    render(p) {
+      return V.company.render(p) + `<form class="card form inline-add" id="addco"><b>New company</b><input name="name" placeholder="Name" required><select name="group">${Object.keys(App.GROUPS).map(g => `<option value="${g}">${App.GROUPS[g]}</option>`).join('')}</select><button class="btn ghost sm" type="submit">${icon('plus')}Add</button></form>`;
+    },
+    mount(root, p) {
+      V.company.mount(root, p); bindCompanyInputs(root);
+      $('#addco', root).onsubmit = e => { e.preventDefault(); const fd = new FormData(e.target), name = fd.get('name').trim(); if (!name) return;
+        const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now().toString(36).slice(-3);
+        App.commit(`Added ${name}`, pl => { pl.companies.push({ id, name, group: fd.get('group') }); }); App.go('edit', { tab: 'companies', id }); };
+    }
+  };
+
+  /* ---------- Plan: repeating work + meeting agendas ---------- */
+  const planPage = {
+    render(p) { return workPage.render(p) + `<h2 class="group">Meeting agendas</h2>` + V.meetings.render(p); },
+    mount(root, p) { V.meetings.mount(root, p); }
+  };
+
+  /* ---------- Settings: folded sections ---------- */
+  const openSet = new Set();
+  const settingsPage = {
+    parts: () => [
+      ['hours', 'Hours, holidays & site windows', officePage],
+      ['people', 'Employees: names and weekly days off', { render: () => whoPage.render().split('<!--EMP-->')[1] || '' }],
+      ['who', 'Who measures which company (all companies)', { render: () => whoPage.render().split('<!--EMP-->')[0] }],
+      ['records', 'Targets, points & records', recordsPage],
+      ['data', 'Excel & backup', dataPage],
+      ['login', 'Login & saving', securityPage]
+    ],
+    render(p) {
+      const OPEN = { who: 'who', office: 'hours', records: 'records', data: 'data', security: 'login' };
+      if (p.open) openSet.add(p.open);
+      if (OPEN[p.tab]) openSet.add(OPEN[p.tab]);
+      return `<section class="settings">${this.parts().map(([k, l, pg]) => `<details class="card set" data-set="${k}" ${openSet.has(k) ? 'open' : ''}><summary><b>${esc(l)}</b></summary><div class="set-body">${pg.render(p)}</div></details>`).join('')}</section>`;
+    },
+    mount(root, p) {
+      $$('details[data-set]', root).forEach(d => d.addEventListener('toggle', () => { if (d.open) openSet.add(d.dataset.set); else openSet.delete(d.dataset.set); }));
+      [officePage, recordsPage, dataPage, securityPage].forEach(pg => { if (pg.mount) pg.mount(root, p); });
+      whoPage.mount(root);
+    }
   };
 
   /* ---------- Repeating work ---------- */
@@ -91,10 +158,12 @@
       return `<section><p class="hint">Tick who measures each company. A company with two people gets separate days, unless "same day" is ticked.</p>
         ${Object.keys(App.GROUPS).map(gk => `<h2 class="group">${App.GROUPS[gk]}</h2><div class="card"><table class="tbl who-tbl"><tbody>${plan.companies.filter(c => c.group === gk).map(c => `<tr><th><input class="co-name" data-cname="${esc(c.id)}" value="${esc(c.name)}" aria-label="Company name"></th><td>${plan.people.map(x => `<label class="pick sm" style="--pc:${x.color}"><input type="checkbox" data-resp="${esc(c.id)}|${esc(x.id)}" ${((plan.responsibilities[x.id] || {})[gk] || []).includes(c.id) ? 'checked' : ''}><span>${esc(x.id)}</span></label>`).join('')}</td><td><label class="check small"><input type="checkbox" data-tog="${esc(c.id)}" ${c.together ? 'checked' : ''}> same day</label></td><td><button type="button" class="x" data-rmco="${esc(c.id)}" aria-label="Remove company">${icon('trash')}</button></td></tr>`).join('')}</tbody></table>
           <form class="form inline-add" data-addco="${gk}"><input name="name" placeholder="New company name" required><button class="btn ghost sm" type="submit">${icon('plus')}Add to ${App.GROUPS[gk].toLowerCase()}</button></form></div>`).join('')}
-        <h2 class="group">Employees</h2><div class="card"><table class="tbl"><tbody>${plan.people.map(x => `<tr><th>${App.avatar(x.id, 'sm')}</th><td><input data-pname="${esc(x.id)}" value="${esc(x.name)}" aria-label="Name"></td><td><input data-pfull="${esc(x.id)}" value="${esc(x.fullName || '')}" placeholder="Full name" aria-label="Full name"></td><td class="offs"><span class="small muted">Off</span>${[1, 2, 3, 4, 5, 6, 0].map(dw => `<label class="pick sm" style="--pc:${x.color}"><input type="checkbox" data-off="${esc(x.id)}|${dw}" ${(x.offDays || []).includes(dw) ? 'checked' : ''}><span>${D.DAYS[dw].slice(0, 2)}</span></label>`).join('')}</td></tr>`).join('')}</tbody></table>
+<!--EMP--><div><table class="tbl"><tbody>${plan.people.map(x => `<tr><th>${App.avatar(x.id, 'sm')}</th><td><input data-pname="${esc(x.id)}" value="${esc(x.name)}" aria-label="Name"></td><td><input data-pfull="${esc(x.id)}" value="${esc(x.fullName || '')}" placeholder="Full name" aria-label="Full name"></td><td class="offs"><span class="small muted">Off</span>${[1, 2, 3, 4, 5, 6, 0].map(dw => `<label class="pick sm" style="--pc:${x.color}"><input type="checkbox" data-off="${esc(x.id)}|${dw}" ${(x.offDays || []).includes(dw) ? 'checked' : ''}><span>${D.DAYS[dw].slice(0, 2)}</span></label>`).join('')}</td></tr>`).join('')}</tbody></table>
         <p class="muted small">"Off" days are weekly days off. Meetings, billing and advances on those days move to the next day the whole group works; other work goes on without that person.</p></div></section>`;
     },
-    mount(root) {
+    mount(root) { bindCompanyInputs(root); bindPeopleInputs(root); }
+  };
+  function bindCompanyInputs(root) {
       $$('[data-resp]', root).forEach(c => c.onchange = () => { const [cid, pid] = c.dataset.resp.split('|'); const co = Store.plan.companies.find(x => x.id === cid);
         App.commit(`${co.name}: ${App.pname(pid)} ${c.checked ? 'added' : 'removed'}`, p => { const r = p.responsibilities[pid]; r[co.group] = (r[co.group] || []).filter(x => x !== cid); if (c.checked) r[co.group].push(cid); }); });
       $$('[data-tog]', root).forEach(c => c.onchange = () => App.commit('Saved', p => { p.companies.find(x => x.id === c.dataset.tog).together = c.checked; }));
@@ -108,12 +177,13 @@
       $$('[data-addco]', root).forEach(f => f.onsubmit = e => { e.preventDefault(); const name = new FormData(f).get('name').trim(); if (!name) return;
         const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now().toString(36).slice(-3);
         App.commit(`Added ${name}`, p => { p.companies.push({ id, name, group: f.dataset.addco }); }); });
+  }
+  function bindPeopleInputs(root) {
       $$('[data-pname]', root).forEach(i => i.onchange = () => App.commit('Name saved', p => { p.people.find(x => x.id === i.dataset.pname).name = i.value || i.dataset.pname; }));
       $$('[data-pfull]', root).forEach(i => i.onchange = () => App.commit('Name saved', p => { p.people.find(x => x.id === i.dataset.pfull).fullName = i.value; }));
       $$('[data-off]', root).forEach(c => c.onchange = () => { const [pid, dw] = c.dataset.off.split('|');
         App.commit(`${App.pname(pid)}: ${D.DAYS[+dw]} ${c.checked ? 'off' : 'working'}`, p => { const x = p.people.find(y => y.id === pid); const s = new Set(x.offDays || []); if (c.checked) s.add(+dw); else s.delete(+dw); x.offDays = [...s]; }); });
-    }
-  };
+  }
 
   /* ---------- Hours, holidays & site windows ---------- */
   const dayGrid = (name, sel) => `<div class="days">${Array.from({ length: 31 }, (_, i) => i + 1).map(d => `<label><input type="checkbox" name="${name}" value="${d}" ${sel.includes(d) ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div>`;

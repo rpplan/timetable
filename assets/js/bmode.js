@@ -45,8 +45,8 @@
     impControl(key, pid) {
       const lv = App.imp(key, pid);
       if (!App.bOn()) return App.impBadge(lv);
-      return `<select class="imp-sel ${lv ? IMP[lv].cls : ''}" data-imp="${esc(key)}|${esc(pid)}" aria-label="Importance">
-        <option value="">Importance</option>${Object.keys(IMP).map(k => `<option value="${k}" ${lv === k ? 'selected' : ''}>${IMP[k].label}</option>`).join('')}</select>`;
+      // three small buttons; tap the lit one again to clear it
+      return `<span class="imp-seg" role="group" aria-label="Importance">${Object.keys(IMP).map(k => `<button type="button" class="${IMP[k].cls} ${lv === k ? 'on' : ''}" data-impseg="${esc(key)}|${esc(pid)}|${k}" aria-pressed="${lv === k}" title="Importance: ${IMP[k].label}">${IMP[k].label}</button>`).join('')}</span>`;
     },
 
     /* ---------- clearance forms (N, R, S, P/P1) ---------- */
@@ -145,6 +145,15 @@
       App.keepScroll = true;
       Store.change('Importance set', p => { if (s.value) p.importance[k] = s.value; else delete p.importance[k]; });
       toast(s.value ? `Importance: ${IMP[s.value].label}` : 'Importance cleared');
+    });
+    $$('[data-impseg]', root).forEach(b => b.onclick = () => {
+      const raw = b.dataset.impseg, i = raw.lastIndexOf('|'), k = raw.slice(0, i), lv = raw.slice(i + 1), on = b.classList.contains('on');
+      App.keepScroll = true;
+      Store.change('Importance set', p => { if (on) delete p.importance[k]; else p.importance[k] = lv; });
+    });
+    $$('[data-cf]', root).forEach(b => b.onclick = () => {
+      const k = b.dataset.cf; App.keepScroll = true;
+      Store.change(Store.plan.clear[k] ? 'Clearance form unticked' : 'Clearance form done', p => { if (p.clear[k]) delete p.clear[k]; else p.clear[k] = D.today(); });
     });
     $$('[data-clr]', root).forEach(c => c.onchange = () => {
       const k = c.dataset.clr; App.keepScroll = true;
