@@ -45,7 +45,7 @@
     if (o.type === 'meeting') { add('meeting', o.title); return out; }
     if (o.siteGroup) { const vs = App.visitsFor(o, pid); if (vs.length) vs.forEach(v => add(v.company, `${App.cname(v.company)} (${v.cycle || 'site'})`)); else add('office', 'Sheets & cement calculation'); return out; }
     if (o.type === 'billing' || o.type === 'advance') {
-      const rows = Engine.slotPlan(Store.plan, o, [], App.data.gen).filter(r => r.segs.some(s => s[0] < to && s[1] > from));
+      const rows = App.payRows(o).filter(r => r.segs.some(s => s[0] < to && s[1] > from));
       rows.forEach(r => add(r.company === 'general' ? 'office' : r.company, `${o.title}: ${r.company === 'general' ? 'all works' : App.cname(r.company)}`));
       return out;
     }

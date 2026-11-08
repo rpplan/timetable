@@ -5,13 +5,13 @@
   const { $, icon, toast, closeModal } = UI;
 
   const VIEW_NAV = [['today', 'Today'], ['week', 'Week'], ['month', 'Month'], ['employees', 'Employees'], ['companies', 'Companies'], ['meetings', 'Meetings'], ['billing', 'Billing days']];
-  const EDIT_NAV = [['chart', 'Link chart'], ['edit', 'Edit']];
+  const EDIT_NAV = [['chart', 'Link chart', 'link'], ['admin', 'B admin', 'lock']];
   const THEMES = { auto: ['auto', 'Auto'], light: ['sun', 'Light'], dark: ['moon', 'Dark'] };
 
   function chrome() {
     const st = Store.plan.settings;
     $('#nav').innerHTML = VIEW_NAV.map(([v, l]) => `<a href="#/${v}" data-view="${v}">${l}</a>`).join('') + '<span class="nav-sep" aria-hidden="true"></span>' +
-      EDIT_NAV.map(([v, l]) => `<a href="#/${v}" data-view="${v}" class="nav-edit">${icon(v === 'chart' ? 'link' : 'edit')}${l}</a>`).join('');
+      EDIT_NAV.map(([v, l, ic]) => `<a href="#/${v}" data-view="${v}" class="nav-edit">${icon(ic)}${l}</a>`).join('');
     $('#range').textContent = `${D.nice(st.start, { short: true })} ${st.start.slice(0, 4)} to ${D.nice(st.end, { short: true })} ${st.end.slice(0, 4)}`;
     $('#title').textContent = Store.plan.title || 'Works timetable';
     $('#undo').innerHTML = icon('undo') + '<span>Undo</span>';
@@ -19,6 +19,7 @@
     const th = THEMES[Store.prefs.theme] || THEMES.auto;
     $('#theme').innerHTML = icon(th[0]) + `<span>${th[1]}</span>`; $('#theme').title = 'Light / dark mode';
     $('#logoff').innerHTML = icon('logout') + '<span>Log off</span>';
+    $('#settings').innerHTML = icon('gear') + '<span>Settings</span>'; $('#settings').classList.toggle('on', App.route.view === 'settings');
   }
 
   function start() {
@@ -28,7 +29,8 @@
     Store.on(() => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; if (!Store.plan) return; App.keepScroll = true; chrome(); App.render(); }); });
     $('#undo').onclick = () => { const l = Store.undo(); if (l) toast(`Undone: ${l}`); };
     $('#add').onclick = () => App.addExtra(App.route.params.date);
-    $('#clash-badge').onclick = () => App.go('edit', { tab: 'problems' });
+    $('#clash-badge').onclick = () => App.go('settings', { open: 'problems' });
+    $('#settings').onclick = () => App.go('settings');
     $('#logoff').onclick = () => Vault.lock('Logged off.');
     $('#theme').onclick = () => { const order = ['auto', 'light', 'dark']; Store.prefs.theme = order[(order.indexOf(Store.prefs.theme) + 1) % 3]; Store.savePrefs(); UI.applyTheme(Store.prefs.theme); chrome(); };
     window.addEventListener('hashchange', () => { App.parseHash(); App.render(); window.scrollTo(0, 0); });

@@ -6,7 +6,8 @@
   const { esc, $, $$, icon, toast, modal, closeModal, confirmBox } = UI;
   const SKEY = 'works-timetable-bmode';
 
-  const IMP = { low: { label: 'Low', cls: 'imp-low' }, medium: { label: 'Medium', cls: 'imp-med' }, high: { label: 'High', cls: 'imp-high' } };
+  /* Priority: High, or Normal (not set) */
+  const IMP = { high: { label: 'High', cls: 'imp-high' } };
 
   /* A small text hash. The pattern is not stored as such, only this hash. */
   function hash(str) {
@@ -41,12 +42,13 @@
       const o = App.data.byKey[key]; const t = o && !o.extra ? App.task(o.taskId) : (o && o.extra ? Store.plan.extra.find(x => 'x:' + x.id === o.taskId) : null);
       return (t && t.importance) || '';
     },
-    impBadge(level) { const i = IMP[level]; return i ? `<span class="imp ${i.cls}" title="Importance: ${i.label}">${i.label}</span>` : ''; },
+    impBadge(level) { return level === 'high' ? '<span class="imp imp-high" title="High priority">High</span>' : ''; },
+    impLabel(level) { return level === 'high' ? 'High' : 'Normal'; },
     impControl(key, pid) {
       const lv = App.imp(key, pid);
       if (!App.bOn()) return App.impBadge(lv);
-      // three small buttons; tap the lit one again to clear it
-      return `<span class="imp-seg" role="group" aria-label="Importance">${Object.keys(IMP).map(k => `<button type="button" class="${IMP[k].cls} ${lv === k ? 'on' : ''}" data-impseg="${esc(key)}|${esc(pid)}|${k}" aria-pressed="${lv === k}" title="Importance: ${IMP[k].label}">${IMP[k].label}</button>`).join('')}</span>`;
+      // one switch: High priority on / off (off = Normal)
+      return `<button type="button" class="tchip sm hp ${lv === 'high' ? 'on' : ''}" data-impseg="${esc(key)}|${esc(pid)}|high" aria-pressed="${lv === 'high'}">${lv === 'high' ? '★ High priority' : '☆ Normal priority'}</button>`;
     },
 
     /* ---------- clearance forms (N, R, S, P/P1) ---------- */

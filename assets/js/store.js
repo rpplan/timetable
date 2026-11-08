@@ -84,7 +84,16 @@
       (t.agenda || []).forEach(a => { if (!Array.isArray(a.owners)) a.owners = a.owner ? [a.owner] : []; delete a.owner; });
       if (t.fillDays && !t.assign) { t.assign = 'perDay'; } delete t.fillDays;
     });
-    p.version = 6;
+    if ((p.version || 1) < 7) {
+      p.settings.sundayStreak = false;                                   // Sunday is a day off for everyone
+      Object.keys(p.importance).forEach(k => { if (p.importance[k] !== 'high') delete p.importance[k]; });   // only High / Normal
+      p.tasks.forEach(t => { if (t.importance && t.importance !== 'high') t.importance = ''; });
+      p.extra.forEach(x => { if (x.importance && x.importance !== 'high') x.importance = ''; });
+      const n = p.responsibilities.N;                                    // as asked: N's two other contractors in the opposite order
+      if (n && Array.isArray(n.other) && n.other.length === 2 && !p.settings.orderSwapped) { n.other = n.other.slice().reverse(); p.settings.orderSwapped = true; }
+    }
+    if (!p.paySheets || typeof p.paySheets !== 'object') p.paySheets = {};
+    p.version = 7;
     return p;
   }
 

@@ -6,154 +6,40 @@
   const { esc, $, $$, icon, toast, modal, closeModal, confirmBox } = UI;
   const V = App.views;
 
-  /* Six sections. Old addresses (#/edit?tab=billing etc.) lead to the section that now holds them. */
-  const OLD = { week: 'chart', company: 'companies', billing: 'day', trips: 'day', work: 'plan', meetings: 'plan', who: 'settings', office: 'settings', records: 'settings', data: 'settings', security: 'settings' };
-  const TABS = [
-    ['day', 'Day', () => dayPage, { what: 'Day: the ticks and notes for one day.', why: 'Leave, outstation trip, importance, clearance forms, 7-day target ticks, billing ticks, remarks and B\'s daily check. Who works where and when is in the Link chart: add, move, hand over or copy work there.' }],
-    ['companies', 'Companies', () => companiesTab, { what: 'Companies: one company at a time.', why: 'Who measures it, moving its site days, and the 6 pm follow-up points for every day of the month. Its timetable is in the Link chart and on the Companies page.' }],
-    ['plan', 'Plan', () => planPage, { what: 'Plan: the work that repeats every month.', why: 'Site runs C-1, C-2, C-3, outstation trips, meetings with their agendas, billing, advances and office work.' }],
-    ['settings', 'Settings', () => settingsPage, { what: 'Settings: set once, change rarely.', why: 'Hours and holidays, site windows, employees, who measures what, points and records, Excel and backup, login.' }],
-    ['admin', 'B admin', () => adminPage, { what: 'B admin: B\'s private hourly schedule.', why: 'Saturday, Sunday and Monday up to 12 noon, opened with B\'s pattern.' }],
-    ['problems', 'Problems', () => problemsPage, { what: 'Problems: things that need a decision.', why: 'Double bookings, work with no free slot, site days outside their window or target. Click "Fix" to open the work.' }]
-  ];
-
-  V.edit = {
-    title: 'Edit', editing: true,
-    render(p) {
-      const want = OLD[p.tab] || p.tab;
-      if (want === 'chart') { setTimeout(() => App.go('chart'), 0); return ''; }   // moving work is done in the Link chart
-      const tab = TABS.find(t => t[0] === want) || TABS[0];
-      const sub = tab[2]();
-      const nProb = App.data.iss.filter(i => i.level !== 'info').length;
-      const nav = `<nav class="tabs plain edit-tabs noprint">${TABS.filter(t => t[0] !== 'problems' || nProb || tab[0] === 'problems').map(([k, l]) => `<a href="#/edit?tab=${k}" class="${k === tab[0] ? 'on' : ''} ${k === 'problems' ? 'prob' : ''}">${esc(l)}${k === 'problems' ? ` <i class="n">${nProb}</i>` : ''}</a>`).join('')}</nav>`;
-      return `${nav}${App.intro(tab[3])}${sub.render(p)}`;
-    },
-    mount(root, p) { const want = OLD[p.tab] || p.tab; const tab = TABS.find(t => t[0] === want) || TABS[0]; const sub = tab[2](); if (sub.mount) sub.mount(root, p); }
-  };
-
-  /* ---------- Day: one compact form per employee ---------- */
-  const dayPage = {
-    render(p) {
-      const plan = Store.plan, data = App.data, st = plan.settings;
-      const date = p.date && p.date >= st.start && p.date <= st.end ? p.date : App.defaultDate();
-      const hol = data.gen.hol[date], past = App.isPast(date), today = date === D.today(), prev = D.add(date, -1), next = D.add(date, 1);
-      const clashes = data.iss.filter(i => i.level === 'clash' && i.date === date);
-      const cards = plan.people.map(x => personCard(x, date, hol, past, today)).join('');
-      const pays = data.gen.occs.filter(o => o.date === date && (o.type === 'advance' || o.type === 'billing')).map(o => {
-        const rows = Engine.slotPlan(plan, o, App.STEPS[o.type], data.gen), checks = plan.reviews.pay || {};
-        return `<article class="card ed-pay"><h3>${esc(o.title)} <span class="count">${rows.filter(r => checks[o.key + '|' + r.company]).length} of ${rows.length} done</span></h3>
-          <div class="chipset">${rows.map(r => { const k = o.key + '|' + r.company; return `<label class="tchip ${checks[k] ? 'on' : ''}"><input type="checkbox" data-pay="${esc(k)}" ${checks[k] ? 'checked' : ''}><span>${esc(r.company === 'general' ? 'All works' : App.cname(r.company))}</span><small>${esc(r.text)}</small></label>`; }).join('')}</div></article>`;
-      }).join('');
-      return `<section class="ed-day">
-        <div class="ed-dayhead"><div class="nav-date"><a class="round ${prev < st.start ? 'off' : ''}" href="#/edit?tab=day&date=${prev}" aria-label="Previous day">${icon('left')}</a>
-          <input type="date" value="${date}" min="${st.start}" max="${st.end}" id="ed-date" aria-label="Choose a day">
-          <a class="round ${next > st.end ? 'off' : ''}" href="#/edit?tab=day&date=${next}" aria-label="Next day">${icon('right')}</a></div>
-          <b class="ed-daytitle">${esc(D.nice(date, { long: true }))}${today ? ' · today' : ''}</b>
-          <a class="btn ghost sm" href="#/chart">${icon('link')}Add or move work in the Link chart</a></div>
-        ${hol ? `<p class="banner">Holiday: ${esc(hol)}</p>` : ''}
-        ${past ? '<p class="banner past-b">This day is over: only the status and remarks can be filled in.</p>' : ''}
-        ${clashes.map(c => `<p class="banner warn">${esc(c.text)}</p>`).join('')}
-        <div class="ed-grid">${cards}</div>
-        ${pays}
-        ${!hol ? App.reviewCard(date) : ''}</section>`;
-    },
-    mount(root, p) {
-      const st = Store.plan.settings, date = p.date && p.date >= st.start && p.date <= st.end ? p.date : App.defaultDate();
-      const d = $('#ed-date', root); if (d) d.onchange = () => { if (d.value) App.go('edit', { tab: 'day', date: d.value }); };
-      $$('[data-rv]', root).forEach(c => c.onchange = () => { const r = Store.plan.reviews; r.days = r.days || {}; const b = (r.days[date] = r.days[date] || {});
-        if (c.checked) b[c.dataset.rv] = true; else delete b[c.dataset.rv]; Store.save(true); App.keepScroll = true; App.render(); });
-      $$('[data-pay]', root).forEach(c => c.onchange = () => { const r = Store.plan.reviews; r.pay = r.pay || {}; if (c.checked) r.pay[c.dataset.pay] = true; else delete r.pay[c.dataset.pay]; Store.save(true); App.keepScroll = true; App.render(); });
-      $$('[data-trip]', root).forEach(c => c.onchange = () => { const [rk, pid] = c.dataset.trip.split('|'); App.setAway(rk, pid, c.checked); });
-    }
-  };
-  function personCard(x, date, hol, past, today) {
-    const data = App.data, pid = x.id, isB = App.isB(pid);
-    const list = (data.gen.sched[pid + '|' + date] || []).filter(e => e.o.type !== 'review');
-    const leave = App.onLeave(pid, date), off = Engine.personOff(Store.plan, pid, date) && !list.length;
-    const w = App.whereLabel(date, pid);
-    const trip = App.outstationRuns(pid).find(r => r.days.includes(date));
-    const canLeave = !isB && !past && !hol && !off;
-    const tg = today && !isB ? App.openTargets(pid) : [];
-    const head = `<header>${App.avatar(pid)}<b>${esc(x.name)}</b>
-      <span class="ed-hchips">${trip && !past ? `<label class="tchip sm ${trip.going ? 'on' : ''}" title="Goes on the outstation trip ${esc(App.listDates(trip.days))}"><input type="checkbox" data-trip="${esc(trip.runKey)}|${esc(pid)}" ${trip.going ? 'checked' : ''}><span>Outstation</span></label>` : ''}
-      ${canLeave ? `<button type="button" class="tchip sm leave ${leave ? 'on' : ''}" data-leave="${esc(pid)}|${date}|${leave ? '0' : '1'}">${leave ? '✓ On leave' : 'On leave'}</button>` : ''}</span></header>`;
-    let body;
-    if (hol) body = '<p class="free">Holiday</p>';
-    else if (leave) body = '<p class="free leave-note">On leave: this day\'s work moves to the next working day.</p>';
-    else if (!list.length) body = `<p class="free">${off ? 'Weekly day off' : 'Nothing planned'}</p>`;
-    else body = `<ul class="ed-rows">${list.map(e => {
-      const ty = App.TYPES[e.o.type] || App.TYPES.office, k = e.key + '|' + pid, r = Store.plan.remarks[k] || {};
-      const cf = !isB && e.o.type !== 'meeting' && date <= D.today();
-      return `<li style="--c:${ty.color}"><div class="ed-top"><span class="ed-name">${esc(App.personLabel(e.o, pid))}</span></div>
-        <div class="ed-ctl">${e.o.type !== 'meeting' ? App.impControl(e.key, pid) : ''}${cf ? `<button type="button" class="tchip sm ${Store.plan.clear[k] ? 'on' : ''}" data-cf="${esc(k)}">${Store.plan.clear[k] ? '✓ ' : ''}Clearance form</button>` : ''}</div>
-        ${date <= D.today() ? `<div class="rmk"><select data-rs="${esc(k)}" aria-label="Status"><option value="">Status…</option>${Object.keys(App.REMARK_LABELS).map(s => `<option value="${s}" ${r.s === s ? 'selected' : ''}>${App.REMARK_LABELS[s]}</option>`).join('')}</select><input data-rt="${esc(k)}" value="${esc(r.t || '')}" placeholder="Remark"></div>` : ''}</li>`;
-    }).join('')}</ul>`;
-    const tgts = tg.length ? `<div class="ed-tg"><span class="muted small">7-day target, tick when measured in time:</span>${tg.map(v => App.targetRow(v)).join('')}</div>` : '';
-    return `<article class="card ed-person ${past ? 'past' : ''}" style="--pc:${x.color}">${head}${body}${tgts}</article>`;
-  }
-
-  /* ---------- Companies: one company, with who measures it ---------- */
-  const companiesTab = {
-    render(p) {
-      const plan = Store.plan, data = App.data, m = App.pickMonth(p);
-      const c = plan.companies.find(x => x.id === p.id) || plan.companies[0];
-      if (!c) return '<p class="free">No companies yet.</p>';
-      const dates = data.gen.dates.filter(d => D.month(d) === m), fu = plan.followups;
-      const vs = data.gen.visits.filter(v => v.company === c.id && D.month(v.date) === m).sort((a, b) => a.date < b.date ? -1 : 1);
-      const opts = Object.keys(App.GROUPS).map(gk => `<optgroup label="${App.GROUPS[gk]}">${plan.companies.filter(x => x.group === gk).map(x => `<option value="${esc(x.id)}" ${x.id === c.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('');
-      const months = [...new Set(data.gen.dates.map(D.month))];
-      return `<section class="co-edit">
-        <div class="ed-dayhead"><select id="co-pick" class="pick-sel" aria-label="Company">${opts}</select>
-          <nav class="tabs plain">${months.map(x => `<a href="#/edit?tab=companies&id=${encodeURIComponent(c.id)}&m=${x}" class="${x === m ? 'on' : ''}">${App.monthName(x)}</a>`).join('')}</nav>
-          <a class="btn ghost sm" href="#/company?id=${encodeURIComponent(c.id)}&m=${m}">See its timetable</a></div>
-        <div class="card co-set"><div class="co-set-row"><span class="muted small">Name</span><input class="co-name" data-cname="${esc(c.id)}" value="${esc(c.name)}" aria-label="Company name"><span class="muted small">${esc(App.GROUPS[c.group])}</span></div>
-          <div class="co-set-row"><span class="muted small">Measured by</span><span class="chipset">${plan.people.map(x => `<label class="pick sm" style="--pc:${x.color}"><input type="checkbox" data-resp="${esc(c.id)}|${esc(x.id)}" ${((plan.responsibilities[x.id] || {})[c.group] || []).includes(c.id) ? 'checked' : ''}><span>${esc(x.name)}</span></label>`).join('')}</span>
-          <label class="check small"><input type="checkbox" data-tog="${esc(c.id)}" ${c.together ? 'checked' : ''}> together on the same day</label></div>
-          <div class="co-set-row"><span class="muted small">Site days</span><span class="chipset">${vs.map(v => App.isPast(v.date) ? `<span class="dchip past" style="--pc:${App.pcolor(v.person)}">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</span>` : `<button type="button" class="dchip" data-visit="${esc(v.key)}" style="--pc:${App.pcolor(v.person)}" title="Move this site day">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</button>`).join('') || '<span class="muted small">none this month</span>'}</span></div>
-          <div class="co-set-row"><button type="button" class="btn ghost sm danger" data-rmco="${esc(c.id)}">${icon('trash')}Remove company</button></div></div>
-        <article class="card"><h3>6 pm follow-up points</h3><ul class="fu-list">${dates.map(d => { const k = c.id + '|' + d, hol = data.gen.hol[d];
-          return `<li class="${App.isPast(d) ? 'past' : ''}"><span class="dd"><b>${D.day(d)}</b>${D.DAYS[D.dow(d)].slice(0, 3)}${hol ? ` · ${esc(hol)}` : ''}</span><textarea data-fu="${esc(k)}" rows="1" placeholder="Follow-up points">${esc(fu[k] || '')}</textarea></li>`; }).join('')}</ul></article>
-      </section><form class="card form inline-add" id="addco"><b>New company</b><input name="name" placeholder="Name" required><select name="group">${Object.keys(App.GROUPS).map(g => `<option value="${g}">${App.GROUPS[g]}</option>`).join('')}</select><button class="btn ghost sm" type="submit">${icon('plus')}Add</button></form>`;
-    },
-    mount(root, p) {
-      bindCompanyInputs(root);
-      const pick = $('#co-pick', root); if (pick) pick.onchange = () => App.go('edit', { tab: 'companies', id: pick.value, m: App.pickMonth(p) });
-      $$('[data-fu]', root).forEach(t => { const grow = () => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }; grow(); t.oninput = grow;
-        t.onchange = () => { const k = t.dataset.fu; if (t.value.trim()) Store.plan.followups[k] = t.value; else delete Store.plan.followups[k]; Store.save(true); toast('Follow-up saved.'); }; });
-      $('#addco', root).onsubmit = e => { e.preventDefault(); const fd = new FormData(e.target), name = fd.get('name').trim(); if (!name) return;
-        const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now().toString(36).slice(-3);
-        App.commit(`Added ${name}`, pl => { pl.companies.push({ id, name, group: fd.get('group') }); }); App.go('edit', { tab: 'companies', id }); };
-    }
-  };
-
-  /* ---------- Plan: repeating work + meeting agendas ---------- */
-  const planPage = {
-    render(p) { return workPage.render(p) + `<h2 class="group">Meeting agendas</h2>` + V.meetings.render(p); },
-    mount(root, p) { V.meetings.mount(root, p); }
-  };
-
-  /* ---------- Settings: folded sections ---------- */
+  /* Settings: things set once and changed rarely. Daily work is changed on Today, in Meetings, in Billing days
+     and in the Link chart; B's admin schedule has its own page. */
   const openSet = new Set();
-  const settingsPage = {
-    parts: () => [
-      ['hours', 'Hours, holidays & site windows', officePage],
-      ['people', 'Employees: names and weekly days off', { render: () => whoPage.render().split('<!--EMP-->')[1] || '' }],
-      ['who', 'Who measures which company (all companies)', { render: () => whoPage.render().split('<!--EMP-->')[0] }],
-      ['records', 'Targets, points & records', recordsPage],
-      ['data', 'Excel & backup', dataPage],
-      ['login', 'Login & saving', securityPage]
-    ],
+  V.settings = {
+    title: 'Settings', editing: true,
+    desc: { what: 'Settings: what is set once and changed rarely.', why: 'Repeating work, who measures which company, employees, hours, holidays and site windows, points and records, Excel and backup, login. Daily changes are made on Today.' },
+    parts() {
+      const nProb = App.data.iss.filter(i => i.level !== 'info').length;
+      return [
+        nProb ? ['problems', `Problems (${nProb})`, problemsPage] : null,
+        ['work', 'Repeating work (site runs, outstation, billing, advances, office work)', workPage],
+        ['who', 'Who measures which company', { render: () => whoPage.render().split('<!--EMP-->')[0] }],
+        ['people', 'Employees: names and weekly days off', { render: () => whoPage.render().split('<!--EMP-->')[1] || '' }],
+        ['hours', 'Hours, holidays & site windows', officePage],
+        ['records', 'Targets, points & records', recordsPage],
+        ['data', 'Excel & backup', dataPage],
+        ['login', 'Login & saving', securityPage]
+      ].filter(Boolean);
+    },
     render(p) {
-      const OPEN = { who: 'who', office: 'hours', records: 'records', data: 'data', security: 'login' };
       if (p.open) openSet.add(p.open);
-      if (OPEN[p.tab]) openSet.add(OPEN[p.tab]);
-      return `<section class="settings">${this.parts().map(([k, l, pg]) => `<details class="card set" data-set="${k}" ${openSet.has(k) ? 'open' : ''}><summary><b>${esc(l)}</b></summary><div class="set-body">${pg.render(p)}</div></details>`).join('')}</section>`;
+      return `<section class="settings"><header class="head"><h1>Settings</h1></header>${this.parts().map(([k, l, pg]) => `<details class="card set ${k === 'problems' ? 'prob' : ''}" data-set="${k}" ${openSet.has(k) ? 'open' : ''}><summary><b>${esc(l)}</b></summary><div class="set-body">${pg.render(p)}</div></details>`).join('')}</section>`;
     },
     mount(root, p) {
       $$('details[data-set]', root).forEach(d => d.addEventListener('toggle', () => { if (d.open) openSet.add(d.dataset.set); else openSet.delete(d.dataset.set); }));
       [officePage, recordsPage, dataPage, securityPage].forEach(pg => { if (pg.mount) pg.mount(root, p); });
       whoPage.mount(root);
     }
+  };
+  V.admin = {
+    title: 'B admin', editing: true,
+    desc: { what: 'B admin: B\'s private hourly schedule.', why: 'Saturday, Sunday and Monday up to 12 noon, opened with B\'s pattern. Each hour has a task, priority and a done tick.' },
+    render(p) { return adminPage.render(p); },
+    mount(root, p) { adminPage.mount(root, p); }
   };
 
   /* ---------- Repeating work ---------- */
@@ -168,7 +54,7 @@
       const plan = Store.plan;
       return `<section><div class="row-btns"><button type="button" class="btn primary" data-task="">${icon('plus')}New repeating work</button></div>
         <ul class="tasks">${plan.tasks.map(t => `<li><button type="button" data-task="${esc(t.id)}" style="--c:${(App.TYPES[t.type] || App.TYPES.office).color}">
-          <b>${esc(t.title)}</b><span>${esc(repeatText(t))}, ${t.start}–${t.end}${t.noSite ? ' · no site work that day' : ''}${t.siteGroup ? ' · ' + ASSIGN[t.assign || 'each'] : ''}${t.importance ? ' · ' + App.IMP[t.importance].label : ''}</span><span class="avs">${Engine.normPeople(plan, t.people).map(x => App.avatar(x, 'sm')).join('')}</span></button></li>`).join('')}</ul></section>`;
+          <b>${esc(t.title)}</b><span>${esc(repeatText(t))}, ${t.start}–${t.end}${t.noSite ? ' · no site work that day' : ''}${t.siteGroup ? ' · ' + ASSIGN[t.assign || 'each'] : ''}${t.importance === 'high' ? ' · High priority' : ''}</span><span class="avs">${Engine.normPeople(plan, t.people).map(x => App.avatar(x, 'sm')).join('')}</span></button></li>`).join('')}</ul></section>`;
     }
   };
 
@@ -244,7 +130,7 @@
   const problemsPage = {
     render() {
       const list = App.data.iss.filter(i => i.level !== 'info'), info = App.data.iss.filter(i => i.level === 'info');
-      return `<section>${list.length ? `<ul class="problems">${list.map(i => `<li class="${i.level}">${i.date ? `<a href="#/edit?tab=day&date=${i.date}">${D.nice(i.date)}</a>` : ''}<span>${esc(i.text)}</span>${(i.keys || []).slice(0, 1).map(k => App.data.byKey[k] ? `<button type="button" class="btn ghost sm" data-occ="${esc(k)}">Fix</button>` : '').join('')}</li>`).join('')}</ul>` : '<p class="free">No problems. Nobody is booked twice.</p>'}
+      return `<section>${list.length ? `<ul class="problems">${list.map(i => `<li class="${i.level}">${i.date ? `<a href="#/today?date=${i.date}">${D.nice(i.date)}</a>` : ''}<span>${esc(i.text)}</span>${(i.keys || []).slice(0, 1).map(k => App.data.byKey[k] ? `<button type="button" class="btn ghost sm" data-occ="${esc(k)}">Fix</button>` : '').join('')}</li>`).join('')}</ul>` : '<p class="free">No problems. Nobody is booked twice.</p>'}
         ${info.length ? `<details class="card mt"><summary><b>Notes</b> <span class="muted small">${info.length} moved or skipped work</span></summary><ul class="list">${info.map(i => `<li>${i.date ? `<span class="muted">${D.nice(i.date)}</span>` : ''}<span>${esc(i.text)}</span></li>`).join('')}</ul></details>` : ''}</section>`;
     }
   };
@@ -342,11 +228,11 @@
         return `<article class="card adm ${App.isPast(d) ? 'past' : ''}"><header class="sheet-h"><div><h2>${D.nice(d, { long: true })}</h2><p class="muted small">${h.start}–${h.end}${also.length ? ` · Also booked: ${also.map(e => esc(e.o.title + ' ' + Engine.partsText(e.parts))).join(', ')}` : ''}</p></div><span class="count">${done} of ${used} done</span></header>
           <ul class="adm-hours">${hours.map(([t, e]) => { const r = rec[T.s(t)] || {}; const k = `${d}|${T.s(t)}`; return `<li class="${r.done ? 'done' : ''}">
             <span class="tm">${T.s(t)}–${T.s(e)}</span><input data-adm="${k}" data-f="t" value="${esc(r.t || '')}" placeholder="Personal / admin work">
-            <select class="imp-sel ${r.imp ? App.IMP[r.imp].cls : ''}" data-adm="${k}" data-f="imp" aria-label="Importance"><option value="">Importance</option>${Object.keys(App.IMP).map(x => `<option value="${x}" ${r.imp === x ? 'selected' : ''}>${App.IMP[x].label}</option>`).join('')}</select>
+            <select class="imp-sel ${r.imp ? App.IMP[r.imp].cls : ''}" data-adm="${k}" data-f="imp" aria-label="Priority"><option value="">Normal</option>${Object.keys(App.IMP).map(x => `<option value="${x}" ${r.imp === x ? 'selected' : ''}>${App.IMP[x].label}</option>`).join('')}</select>
             <label class="check"><input type="checkbox" data-adm="${k}" data-f="done" ${r.done ? 'checked' : ''}><span>Done</span></label></li>`; }).join('')}</ul></article>`;
       }).join('');
       return `<section><header class="head"><h1>B's admin schedule: ${App.monthName(m)}</h1>
-          <div class="acts noprint"><div class="nav-date"><a class="round" href="#/edit?tab=admin&m=${prev}" aria-label="Previous month">${icon('left')}</a><a class="round" href="#/edit?tab=admin&m=${next}" aria-label="Next month">${icon('right')}</a></div>
+          <div class="acts noprint"><div class="nav-date"><a class="round" href="#/admin?m=${prev}" aria-label="Previous month">${icon('left')}</a><a class="round" href="#/admin?m=${next}" aria-label="Next month">${icon('right')}</a></div>
           <button type="button" class="btn ghost" data-print="admin">${icon('print')}Print / save PDF</button><button type="button" class="btn ghost" id="adm-lock">${icon('lock')}Lock</button></div></header>
         <details class="card noprint"><summary><b>Hours</b> <span class="muted small">${st.adminHours.map(h => `${D.DAYS[h.dow].slice(0, 3)} ${h.start}–${h.end}`).join(', ')}</span></summary>
           <form id="adm-hours" class="form mt">${st.adminHours.map((h, i) => `<div class="row3"><label>Day<input value="${D.DAYS[h.dow]}" disabled></label><label>From<input type="time" name="a${i}" value="${h.start}" step="1800"></label><label>To<input type="time" name="b${i}" value="${h.end}" step="1800"></label></div>`).join('')}
@@ -374,11 +260,11 @@
 
   /* ---------------- Excel ---------------- */
   function exportExcel() {
-    const plan = Store.plan, data = App.compute(), st = plan.settings, STEPS = App.STEPS;
+    const plan = Store.plan, data = App.compute(), st = plan.settings;
     const nm = id => App.pname(id), cn = id => App.cname(id), ty = t => (App.TYPES[t] || {}).label || t;
     const RL = App.REMARK_LABELS, rmk = k => plan.remarks[k] || {};
-    const IL = k => (App.IMP[k] || {}).label || '';
-    const pw = [['Person', 'Date', 'Day', 'Week of', 'Month', 'Slot', 'Start', 'End', 'Hours', 'Work', 'Kind', 'Importance', 'Clearance form', 'Status', 'Remarks']];
+    const IL = k => App.impLabel(k);
+    const pw = [['Person', 'Date', 'Day', 'Week of', 'Month', 'Slot', 'Start', 'End', 'Hours', 'Work', 'Kind', 'Priority', 'Clearance form', 'Status', 'Remarks']];
     data.gen.dates.forEach(d => plan.people.forEach(p => App.dayRows(d, p.id).forEach(r => {
       const rr = rmk(r.o.key + '|' + p.id);
       pw.push([nm(p.id), d, D.DAYS[D.dow(d)], D.weekStart(d), D.month(d), r.noTime ? 'No free slot' : r.slot >= 0 ? `Slot ${r.slot + 1}` : 'Meeting / other', r.noTime ? '' : T.s(r.a), r.noTime ? '' : T.s(r.b), r.noTime ? 0 : +((r.b - r.a) / 60).toFixed(2), App.personLabel(r.o, p.id), ty(r.o.type), IL(App.imp(r.o.key, p.id)), App.isB(p.id) ? '' : (plan.clear[r.o.key + '|' + p.id] ? 'Done' : ''), RL[rr.s] || '', rr.t || '']);
@@ -399,7 +285,7 @@
     const meet = [['Date', 'Meeting', 'Attending', 'Out of station', 'Start', 'Agenda item', 'Minutes', 'People']];
     data.gen.occs.filter(o => o.type === 'meeting').forEach(o => { let cur = T.m(o.start); ((App.task(o.taskId) || {}).agenda || []).forEach(a => { meet.push([o.date, o.title, o.people.map(nm).join(', '), (o.away || []).map(nm).join(', '), T.s(cur), a.item, a.minutes, (a.owners || []).map(nm).join(', ')]); cur += Number(a.minutes) || 0; }); });
     const pay = [['Date', 'Kind', 'Start', 'End', 'Company', 'Steps', 'People', 'Done']];
-    data.gen.occs.filter(o => o.type === 'advance' || o.type === 'billing').forEach(o => Engine.slotPlan(plan, o, STEPS[o.type], data.gen).forEach(r => pay.push([o.date, o.title, r.start, r.end, r.company === 'general' ? 'All works' : cn(r.company), STEPS[o.type].join(', '), o.people.map(nm).join(', '), (plan.reviews.pay || {})[o.key + '|' + r.company] ? 'Yes' : ''])));
+    data.gen.occs.filter(o => o.type === 'advance' || o.type === 'billing').forEach(o => App.payRows(o).forEach(r => pay.push([o.date, o.title, r.start, r.end, r.company === 'general' ? 'All works' : cn(r.company), r.steps, o.people.map(nm).join(', '), (plan.reviews.pay || {})[o.key + '|' + r.company] ? 'Yes' : ''])));
     const sched = [['Date', 'Day', 'Start', 'End', 'Hours', 'Work', 'Kind', 'People', 'Out of station']];
     data.gen.occs.forEach(o => sched.push([o.date, D.DAYS[D.dow(o.date)], o.start, o.end, +(o.mins / 60).toFixed(2), o.title, ty(o.type), o.people.map(nm).join(', '), (o.away || []).map(nm).join(', ')]));
     const pts = [['Person', 'Company', 'Run', 'Ticked on', 'Due', 'Points']];
@@ -407,9 +293,12 @@
     plan.people.filter(x => !App.isB(x.id)).forEach(x => pts.push([nm(x.id), 'TOTAL', '', '', '', App.points(x.id)]));
     const fus = [['Company', 'Date', '6 pm follow-up points']];
     Object.keys(plan.followups).sort().forEach(k => { const [c, d] = k.split('|'); fus.push([cn(c), d, plan.followups[k]]); });
+    const dc = [['Date', 'Person', 'On leave', 'Works completed', 'Sufficient', 'On time', 'Timetable updated for tomorrow']];
+    Object.keys(plan.reviews.days || {}).sort().forEach(d => { const r = plan.reviews.days[d]; if (!r.emp && !r.tomorrow) return;
+      plan.people.filter(x => !App.isB(x.id)).forEach(x => { const e = (r.emp || {})[x.id] || {}; dc.push([d, nm(x.id), App.onLeave(x.id, d) ? 'Yes' : '', e.works || '', e.ok === 'yes' ? 'Sufficient' : e.ok === 'no' ? 'Not sufficient' : '', e.timely ? 'Yes' : '', r.tomorrow ? 'Yes' : '']); }); });
     const lv = [['Person', 'Date']];
     Object.keys(plan.leave).sort().forEach(k => { const [pid, d] = k.split('|'); lv.push([nm(pid), d]); });
-    IO.download(IO.xlsx([{ name: 'Person-wise', rows: pw }, { name: 'Hours', rows: hrs }, { name: 'Day grid', rows: daily }, { name: 'Company-wise', rows: comp }, { name: 'Meetings', rows: meet }, { name: 'Advance & billing', rows: pay }, { name: 'All work', rows: sched }, { name: 'Remarks', rows: rem }, { name: 'Points', rows: pts }, { name: 'Company follow-ups', rows: fus }, { name: 'Leave', rows: lv }]), `timetable-${st.start}-to-${st.end}.xlsx`);
+    IO.download(IO.xlsx([{ name: 'Person-wise', rows: pw }, { name: 'Hours', rows: hrs }, { name: 'Day grid', rows: daily }, { name: 'Company-wise', rows: comp }, { name: 'Meetings', rows: meet }, { name: 'Advance & billing', rows: pay }, { name: 'All work', rows: sched }, { name: 'Remarks', rows: rem }, { name: 'Points', rows: pts }, { name: 'Company follow-ups', rows: fus }, { name: 'Leave', rows: lv }, { name: 'Daily check', rows: dc }]), `timetable-${st.start}-to-${st.end}.xlsx`);
     toast('Excel downloaded.');
   }
   App.exportExcel = exportExcel;

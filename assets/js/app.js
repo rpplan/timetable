@@ -115,8 +115,17 @@
     /* ---------- routing ---------- */
     go(view, params) { location.hash = '#/' + view + (params ? '?' + new URLSearchParams(params).toString() : ''); },
     parseHash() {
-      const [v, q] = location.hash.replace(/^#\/?/, '').split('?');
-      this.route = { view: this.views[v] ? v : 'today', params: Object.fromEntries(new URLSearchParams(q || '')) };
+      let [v, q] = location.hash.replace(/^#\/?/, '').split('?');
+      const params = Object.fromEntries(new URLSearchParams(q || ''));
+      if (v === 'people') v = 'employees';
+      if (v === 'edit') {   // the Edit tab was removed: old links go to the page that now holds that part
+        const to = { day: 'today', billing: 'billing', meetings: 'meetings', plan: 'meetings', admin: 'admin', week: 'chart', companies: 'companies', company: 'companies' }[params.tab] || 'settings';
+        const open = { data: 'data', who: 'who', office: 'hours', records: 'records', security: 'login', problems: 'problems', work: 'work' }[params.tab];
+        if (open) params.open = open;
+        v = to; delete params.tab;
+        try { history.replaceState(null, '', '#/' + v + (Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '')); } catch (e) { /* ignore */ }
+      }
+      this.route = { view: this.views[v] ? v : 'today', params };
     },
     /* Short description shown above every page: what it does and what it is for */
     /* One line; tap "About this page" for the purpose */
@@ -200,7 +209,7 @@
     openOcc(key) {
       const o = this.data.byKey[key]; if (!o) return;
       if (!this.editing) { this.showOcc(o); return; }
-      if (this.isPast(o.date)) { toast('This day is over, so it can no longer be changed. Add a remark in Edit → Daily entries.'); return; }
+      if (this.isPast(o.date)) { toast('This day is over, so it can no longer be changed. Its status and remarks can still be written on Today.'); return; }
       if (o.carried) { toast(`Carried over from ${D.nice(o.carriedFrom)} (leave). Cancel the leave on that day to put it back.`); return; }
       const plan = Store.plan, isExtra = key.startsWith('x:'), t = isExtra ? null : this.task(o.taskId);
       const clashes = this.data.iss.filter(i => i.level === 'clash' && (i.keys || []).includes(key));
@@ -271,8 +280,8 @@
           ${o.away && o.away.length ? `<p class="note">Out of station: ${o.away.map(p => esc(this.pname(p))).join(', ')}</p>` : ''}
           ${o.onLeave && o.onLeave.length ? `<p class="note">On leave: ${o.onLeave.map(p => esc(this.pname(p))).join(', ')}</p>` : ''}
           ${o.details ? `<p class="muted small">${esc(o.details)}</p>` : ''}`,
-        foot: `<span class="spacer"></span><button type="button" class="btn ghost" data-close>Close</button>${this.isPast(o.date) ? '' : '<button type="button" class="btn primary" id="occ-edit">Change in Edit</button>'}`,
-        onOpen: m => { const b = $('#occ-edit', m); if (b) b.onclick = () => { closeModal(); App.pendingOpen = o.key; App.go('edit', { tab: 'day', date: o.date }); }; }
+        foot: `<span class="spacer"></span><button type="button" class="btn ghost" data-close>Close</button>${this.isPast(o.date) ? '' : '<button type="button" class="btn primary" id="occ-edit">Change</button>'}`,
+        onOpen: m => { const b = $('#occ-edit', m); if (b) b.onclick = () => { closeModal(); App.pendingOpen = o.key; App.go('today', { date: o.date }); }; }
       });
     },
 
@@ -293,7 +302,7 @@
           <div class="row2"><label>Kind<select name="type">${Object.keys(TYPES).map(k => `<option value="${k}" ${k === 'office' ? 'selected' : ''}>${TYPES[k].label}</option>`).join('')}</select></label>
           <label>Company<select name="company"><option value="">None</option>${companyOptions('')}</select></label></div>
           <label class="check"><input type="checkbox" name="noSite"> Office work: no site measurement for these people that day</label>
-          ${true ? `<label>Importance<select name="importance"><option value="">Not set</option>${Object.keys(App.IMP).map(k => `<option value="${k}">${App.IMP[k].label}</option>`).join('')}</select></label>` : ''}</form>`,
+          ${true ? `<label>Priority<select name="importance"><option value="">Normal</option>${Object.keys(App.IMP).map(k => `<option value="${k}">${App.IMP[k].label}</option>`).join('')}</select></label>` : ''}</form>`,
         foot: `<span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" form="x-form" class="btn primary">Add</button>`,
         onOpen: m => {
           const sel = $('#x-slot', m), f = $('#x-form', m);
@@ -331,7 +340,7 @@
             <option value="perRun" ${t.assign === 'perRun' ? 'selected' : ''}>One company for the whole run; the next company in the next run</option>
             <option value="perDay" ${t.assign === 'perDay' ? 'selected' : ''}>One company per day, one after the other</option>
             <option value="each" ${!t.assign || t.assign === 'each' ? 'selected' : ''}>Each company on its own day (then sheet work)</option></select></label>` : ''}
-          ${true ? `<label>Importance (set by B)<select name="importance"><option value="">Not set</option>${Object.keys(App.IMP).map(k => `<option value="${k}" ${t.importance === k ? 'selected' : ''}>${App.IMP[k].label}</option>`).join('')}</select></label>` : (t.importance ? `<p class="muted small">Importance: ${App.IMP[t.importance].label} (B can change it in B mode)</p>` : '')}
+          ${true ? `<label>Priority<select name="importance"><option value="">Normal</option>${Object.keys(App.IMP).map(k => `<option value="${k}" ${t.importance === k ? 'selected' : ''}>${App.IMP[k].label}</option>`).join('')}</select></label>` : (t.importance ? `<p class="muted small">Importance: ${App.IMP[t.importance].label} (B can change it in B mode)</p>` : '')}
           <label>Details<textarea name="details" rows="2">${esc(t.details || '')}</textarea></label></form>`,
         foot: `${!isNew ? '<button type="button" class="btn ghost danger" id="t-del">Delete</button>' : ''}<span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" form="t-form" class="btn primary">Save</button>`,
         onOpen: m => {

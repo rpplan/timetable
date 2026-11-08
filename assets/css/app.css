@@ -776,3 +776,117 @@ a.round.off { opacity: .35; pointer-events: none; }
 #addco { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #addco input[name=name] { flex: 1 1 220px; width: auto; max-width: none; }
 #addco select { flex: 0 1 220px; width: auto; }
+
+/* ---------- version 9 ---------- */
+:root { --off-bg: #5f6672; --off-ink: #f1f3f6; }
+:root[data-theme="dark"] { --off-bg: #3a3f49; --off-ink: #c9ced8; }
+#settings.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* thin, dark-grey holiday / no-work columns and rows; dark-grey days off */
+.week col.c-name { width: 120px; }
+.week col.c-thin { width: 40px; }
+.week th.thin, .week td.thin { background: var(--off-bg) !important; color: var(--off-ink); padding: 4px 2px; border-color: color-mix(in srgb, var(--off-bg) 70%, #000); }
+.week th.thin { vertical-align: middle; height: 120px; }
+.vlabel { display: block; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-size: 11px; font-weight: 700; margin: 0 auto; color: var(--off-ink); }
+.week td.off { background: var(--off-bg) !important; color: var(--off-ink); vertical-align: middle; text-align: center; font-size: 12px; font-weight: 600; }
+.week td.off.leave { background: #6a4a8c !important; color: #fff; }
+.week tr.thin th, .week tr.thin td { background: var(--off-bg) !important; color: var(--off-ink); padding: 2px 8px; height: auto; font-size: 11.5px; font-weight: 600; line-height: 1.5; }
+.week tr.thin th.rowhead { color: var(--off-ink); }
+.key-off { background: var(--off-bg); }
+.wl-thin { background: var(--off-bg); color: var(--off-ink); border-radius: 8px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+.offbar { display: inline-block; background: var(--off-bg); color: var(--off-ink); border-radius: 6px; padding: 1px 10px; font-size: 12px; font-weight: 600; }
+.star { color: #e0a100; }
+.co-tbl tr.thin td, .co-tbl tr.thin th { background: var(--off-bg); color: var(--off-ink); padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
+.co-tbl tr.thin .fu-ro { min-height: 0; border: 0; }
+
+/* Today cards */
+.tcard > * + * { margin-top: 10px; }
+.tcard header { flex-wrap: wrap; }
+.tcard .trip-chip { margin-left: auto; }
+.tcard .ed-rows li.freeslot { background: none; border: 1px dashed var(--line); border-left-width: 4px; color: var(--muted); font-style: italic; display: flex; gap: 10px; font-size: 13px; }
+.tcard .ed-rows li.clash { background: var(--red-soft); border-left-color: var(--red); }
+.tcard .ed-rows li.carried { border-left-style: dashed; }
+.tchip.hp.on { background: #fff4d0; border-color: #f0c64b; color: #8a5a00; }
+:root[data-theme="dark"] .tchip.hp.on { background: #352a12; color: #ffcf73; }
+.tchip.bad.on { background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 45%, transparent); color: var(--red); }
+.addtask { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; border-top: 1px dashed var(--line); padding-top: 10px; }
+.addtask input[name=t] { flex: 1 1 140px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--card); }
+.addtask select { border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--card); }
+.hp-pick:has(input:checked) { background: #fff4d0; border-color: #f0c64b; color: #8a5a00; }
+
+/* B's daily check */
+.dc { display: grid; gap: 10px; }
+.dc-row { display: grid; grid-template-columns: 170px 1fr auto; gap: 10px; align-items: start; padding: 10px; border-radius: 12px; background: var(--soft); border-left: 4px solid var(--pc); }
+.dc-who { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; }
+.dc-who .check { grid-column: 1 / -1; }
+.dc textarea { width: 100%; min-height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: none; overflow: hidden; background: var(--card); color: var(--ink); font-size: 14px; }
+.dc textarea:disabled { opacity: .5; }
+.dc-ticks { display: flex; gap: 6px; flex-wrap: wrap; max-width: 330px; }
+.dc-tom { margin-top: 12px; font-weight: 700; }
+
+/* Employees side by side */
+.emp-chart { table-layout: fixed; }
+.emp-chart thead th { position: sticky; top: 0; z-index: 2; background: var(--head); border-top: 4px solid var(--pc, transparent); vertical-align: top; }
+.emp-chart thead th:first-child { width: 110px; }
+.eh { display: flex; gap: 8px; align-items: center; }
+.eh b { display: block; color: var(--ink); font-size: 15px; }
+.eh small { display: block; font-weight: 500; font-size: 11px; line-height: 1.3; color: var(--muted); }
+.eh-acts { display: flex; gap: 4px; margin-top: 6px; }
+.emp-chart td { font-size: 12.5px; height: auto; }
+.emp-chart .rowhead small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; }
+.ec-sum td { background: var(--card); }
+.ec-sum + tr:not(.ec-sum) th, .ec-sum + tr:not(.ec-sum) td { border-top: 3px solid var(--line); }
+.pts { font-size: 24px; }
+.ec-grp + .ec-grp { margin-top: 6px; }
+.ec-trip + .ec-trip { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.ec-trip.stay { opacity: .6; }
+.ec-tg { display: flex; gap: 6px; align-items: baseline; }
+.ec-tg small { color: var(--muted); }
+.ec-tg.done span, .ec-tg.ticked span { color: var(--green); font-weight: 800; }
+.ec-tg.missed span { color: var(--red); font-weight: 800; }
+.print-hide { }
+
+/* Meetings, editable */
+.mt-title { font-size: 17px; font-weight: 700; border: 1px solid transparent; border-radius: 8px; padding: 4px 6px; width: 100%; background: none; color: var(--ink); }
+.mt-title:hover, .mt-title:focus { border-color: var(--line); background: var(--card); }
+.mt-when { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+.mt-when label { display: grid; gap: 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.mt-when input { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--card); color: var(--ink); }
+.mt-days { flex: 1 1 150px; }
+.mt-occ { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.mt-occ li { display: flex; align-items: center; gap: 8px; }
+.mt-occ input[type=date] { border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; background: var(--card); color: var(--ink); }
+.mt-occ li.past { color: var(--muted); }
+
+/* Billing days, editable */
+.pay-scroll { box-shadow: none; background: none; }
+.pay-tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 640px; }
+.pay-tbl th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px; }
+.pay-tbl td { padding: 3px 4px; border-top: 1px solid var(--line); }
+.pay-tbl input:not([type=checkbox]), .pay-tbl select { border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; background: var(--card); color: var(--ink); width: 100%; }
+.pay-tbl td:nth-child(1), .pay-tbl td:nth-child(2) { width: 104px; }
+.pay-tbl td:nth-child(3) { width: 200px; }
+.pay-tbl td:nth-child(5), .pay-tbl td:nth-child(6) { width: 40px; text-align: center; }
+.pay-tbl input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--green); }
+.sheet-h .row-btns { align-items: center; }
+.set.prob > summary b { color: var(--red); }
+
+@media (max-width: 640px) {
+  .dc-row { grid-template-columns: 1fr; }
+  .dc-ticks { max-width: none; }
+  .tcard .trip-chip { margin-left: 0; }
+}
+@media print {
+  .print-hide { display: none !important; }
+  .emp-chart { min-width: 0 !important; }
+  .emp-chart thead th { position: static; }
+  .addtask, .dc-ticks .tchip:not(.on) { display: none !important; }
+  .week th.thin, .week td.thin, .week td.off, .week tr.thin td, .week tr.thin th { background: #5f6672 !important; color: #fff !important; }
+}
+@media (max-width: 640px) {
+  .pay-tbl { min-width: 0; }
+  .pay-tbl thead { display: none; }
+  .pay-tbl tr { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); align-items: center; }
+  .pay-tbl td { border: 0; padding: 0; width: auto !important; }
+  .pay-tbl td:nth-child(3), .pay-tbl td:nth-child(4) { grid-column: 1 / -1; }
+}

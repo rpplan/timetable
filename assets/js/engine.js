@@ -359,18 +359,18 @@
           return;
         }
         if (mode === 'perDay') {
-          // One company per day, one after the other; the turn carries on into next month's run.
+          // Companies one after the other in continuous blocks of days (e.g. company A on 12, 13, 14; then company B on 16, 17, 18, 19).
+          // Each month the list starts one company further on, so nobody's company is always last.
           if (!mine.length) return;
-          let i = mod(mIdx * Math.max(1, (t.days || []).length), mine.length);
-          const seenHere = new Set();
-          days.forEach(d => {
-            for (let k = 0; k < mine.length; k++) {
-              const cid = mine[(i + k) % mine.length];
-              if (usedBy[cid] && usedBy[cid].has(d)) continue;
-              push(cid, pid, d, false, seenHere.has(cid)); seenHere.add(cid); i = i + k + 1; break;
-            }
+          const n = mine.length, off = mod(mIdx, n), order = mine.slice(off).concat(mine.slice(0, off));
+          const k = Math.min(n, days.length), base = k ? Math.floor(days.length / k) : 0, extra = k ? days.length % k : 0;
+          const seenHere = new Set(); let di = 0;
+          order.slice(0, k).forEach((cid, bi) => {
+            const size = base + (bi >= k - extra ? 1 : 0);
+            for (let j = 0; j < size; j++, di++) push(cid, pid, days[di], false, j > 0);
+            seenHere.add(cid);
           });
-          const left = mine.filter(c => !seenHere.has(c));
+          const left = order.filter(c => !seenHere.has(c));
           if (left.length && days.length && list.some(o => inWin(o.date))) notes.push({ level: 'info', kind: 'nextturn', date: days[0], taskId: t.id,
             text: `${personName(plan, pid)} has more companies than days in ${t.title} (${mk}): ${left.map(c => companyName(plan, c)).join(', ')} come next in turn.` });
           return;
