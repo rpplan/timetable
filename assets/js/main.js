@@ -4,7 +4,7 @@
   const { D } = Engine;
   const { $, icon, toast, closeModal } = UI;
 
-  const VIEW_NAV = [['today', 'Today'], ['week', 'Week'], ['month', 'Month'], ['employees', 'Employees'], ['companies', 'Companies'], ['meetings', 'Meetings'], ['billing', 'Billing days']];
+  const VIEW_NAV = [['today', 'Today'], ['month', 'Month'], ['employees', 'Employees'], ['companies', 'Companies'], ['meetings', 'Meetings'], ['billing', 'Billing days']];
   const EDIT_NAV = [['chart', 'Link chart', 'link'], ['admin', 'B admin', 'lock']];
   const THEMES = { auto: ['auto', 'Auto'], light: ['sun', 'Light'], dark: ['moon', 'Dark'] };
 

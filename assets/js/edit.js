@@ -18,6 +18,7 @@
         nProb ? ['problems', `Problems (${nProb})`, problemsPage] : null,
         ['work', 'Repeating work (site runs, outstation, billing, advances, office work)', workPage],
         ['who', 'Who measures which company', { render: () => whoPage.render().split('<!--EMP-->')[0] }],
+        ['eng', 'Company site engineers (names and phone numbers)', engPage],
         ['people', 'Employees: names and weekly days off', { render: () => whoPage.render().split('<!--EMP-->')[1] || '' }],
         ['hours', 'Hours, holidays & site windows', officePage],
         ['records', 'Targets, points & records', recordsPage],
@@ -31,17 +32,10 @@
     },
     mount(root, p) {
       $$('details[data-set]', root).forEach(d => d.addEventListener('toggle', () => { if (d.open) openSet.add(d.dataset.set); else openSet.delete(d.dataset.set); }));
-      [officePage, recordsPage, dataPage, securityPage].forEach(pg => { if (pg.mount) pg.mount(root, p); });
+      [officePage, recordsPage, dataPage, securityPage, engPage].forEach(pg => { if (pg.mount) pg.mount(root, p); });
       whoPage.mount(root);
     }
   };
-  V.admin = {
-    title: 'B admin', editing: true,
-    desc: { what: 'B admin: B\'s private hourly schedule.', why: 'Saturday, Sunday and Monday up to 12 noon, opened with B\'s pattern. Each hour has a task, priority and a done tick.' },
-    render(p) { return adminPage.render(p); },
-    mount(root, p) { adminPage.mount(root, p); }
-  };
-
   /* ---------- Repeating work ---------- */
   function repeatText(t) {
     if (t.mode === 'daily') return 'Every working day';
@@ -91,6 +85,20 @@
       $$('[data-off]', root).forEach(c => c.onchange = () => { const [pid, dw] = c.dataset.off.split('|');
         App.commit(`${App.pname(pid)}: ${D.DAYS[+dw]} ${c.checked ? 'off' : 'working'}`, p => { const x = p.people.find(y => y.id === pid); const s = new Set(x.offDays || []); if (c.checked) s.add(+dw); else s.delete(+dw); x.offDays = [...s]; }); });
   }
+
+  /* ---------- Company site engineers (shown in the 6 pm follow-up) ---------- */
+  const engPage = {
+    render() {
+      const plan = Store.plan;
+      return `<section><p class="hint">Shown under the 6 pm follow-up on Today and on each company's schedule. Leave a row empty to remove it.</p>
+        <div class="card"><table class="tbl eng-tbl"><tbody>${plan.companies.map(c => { const es = (c.engineers || []).concat([{ name: '', phone: '' }]);
+          return `<tr><th>${esc(c.name)}</th><td>${es.map((e, i) => `<div class="eng-row"><input data-eng="${esc(c.id)}|${i}|name" value="${esc(e.name)}" placeholder="Engineer name" aria-label="Engineer name"><input data-eng="${esc(c.id)}|${i}|phone" value="${esc(e.phone || '')}" placeholder="Phone" inputmode="tel" aria-label="Phone"></div>`).join('')}</td></tr>`; }).join('')}</tbody></table></div></section>`;
+    },
+    mount(root) {
+      $$('[data-eng]', root).forEach(i => i.onchange = () => { const [cid, n, f] = i.dataset.eng.split('|');
+        App.commit('Engineer saved', p => { const c = p.companies.find(x => x.id === cid); const es = c.engineers = c.engineers || []; es[+n] = Object.assign({ name: '', phone: '' }, es[+n], { [f]: i.value.trim() }); c.engineers = es.filter(e => e && (e.name || e.phone)); }); });
+    }
+  };
 
   /* ---------- Hours, holidays & site windows ---------- */
   const dayGrid = (name, sel) => `<div class="days">${Array.from({ length: 31 }, (_, i) => i + 1).map(d => `<label><input type="checkbox" name="${name}" value="${d}" ${sel.includes(d) ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div>`;
@@ -142,16 +150,16 @@
       const cnt = {
         timetable: ['remarks', 'clear', 'importance'].reduce((n, k) => n + Object.keys(plan[k]).filter(x => x.endsWith('|B')).length, 0),
         checks: Object.keys(plan.reviews.days || {}).length, pay: Object.keys(plan.reviews.pay || {}).length,
-        targets: Object.keys(plan.targets).length, followups: Object.keys(plan.followups).length, admin: Object.keys(plan.admin).length
+        followups: Object.keys(plan.followups).length, admin: Object.keys(plan.admin).length
       };
       const kinds = [['timetable', 'B\'s timetable remarks, clearance and importance', cnt.timetable], ['checks', 'B\'s daily check ticks (days)', cnt.checks], ['pay', 'Advance & billing ticks', cnt.pay],
-        ['targets', 'Site target ticks (points)', cnt.targets], ['followups', 'Company 6 pm follow-up points', cnt.followups], ['admin', 'B\'s admin schedule (days)', cnt.admin]];
+        ['marks', 'Monthly schedule marks (points)', (plan.marks || []).length], ['followups', 'Company 6 pm follow-up points', cnt.followups], ['admin', 'B\'s admin schedule (days)', cnt.admin]];
       return `<section><div class="grid2">
-        <article class="card"><h2>Automatic clean-up</h2><p class="muted">Every day, the daily records of N, R, S and P/P1 (remarks, clearance forms, importance, leave, work added by hand) older than <b>${st.retentionDays}</b> days are deleted. B's records are never deleted automatically.</p>
+        <article class="card"><h2>Automatic clean-up</h2><p class="muted">Every day, the daily records of N, R, S and P (remarks, clearance forms, importance, leave, work added by hand) older than <b>${st.retentionDays}</b> days are deleted. B's records are never deleted automatically.</p>
           <form id="ret" class="form"><div class="row2"><label>Keep daily records for (days)<input type="number" name="days" min="7" max="3650" value="${st.retentionDays}"></label><span></span></div><button type="submit" class="btn ghost">Save</button></form></article>
-        <article class="card"><h2>Points</h2><p class="muted">Target for each site measurement: <b>${st.targetDays}</b> days from the start of the run. Each tick of "done in time" = <b>${st.targetPoints}</b> points.</p>
-          <table class="tbl"><tbody>${plan.people.filter(x => !App.isB(x.id)).map(x => `<tr><th>${App.who(x.id)}</th><td>${App.points(x.id)}</td></tr>`).join('')}</tbody></table>
-          <form id="pts" class="form"><div class="row2"><label>Target days<input type="number" name="days" min="1" max="31" value="${st.targetDays}"></label><label>Points per tick<input type="number" name="pts" min="1" max="10000" value="${st.targetPoints}"></label></div><button type="submit" class="btn ghost">Save</button></form></article>
+        <article class="card"><h2>Points for target completion</h2><p class="muted">Each <b>positive</b> mark in the monthly schedule gives <b>${st.targetPoints}</b> points to every employee whose cells are in it. Negative marks give no points.</p>
+          <table class="tbl"><tbody>${App.staff().map(x => `<tr><th>${App.who(x.id)}</th><td>${App.points(x.id)}</td></tr>`).join('')}</tbody></table>
+          <form id="pts" class="form"><div class="row2"><label>Points per positive mark<input type="number" name="pts" min="1" max="10000" value="${st.targetPoints}"></label><span></span></div><button type="submit" class="btn ghost">Save</button></form></article>
         <article class="card"><h2>B's records</h2><p class="muted">Kept for ever unless B deletes them here.</p>
           <form id="bdel" class="form"><label>Delete records before<input type="date" name="before" required value="${D.add(D.today(), -Number(st.retentionDays || 45))}"></label>
           <fieldset><legend>Which records</legend>${kinds.map(([k, l, n]) => `<label class="check"><input type="checkbox" name="k" value="${k}"> ${l} <span class="muted small">(${n} in total)</span></label>`).join('')}</fieldset>
@@ -159,7 +167,7 @@
     },
     mount(root) {
       const r = $('#ret', root); r.onsubmit = e => { e.preventDefault(); const n = Number(new FormData(r).get('days')); App.commit(`Daily records kept for ${n} days`, pl => { pl.settings.retentionDays = n; }); Store.cleanUp(); };
-      const pt = $('#pts', root); pt.onsubmit = e => { e.preventDefault(); const fd = new FormData(pt); App.commit('Points settings saved', pl => { pl.settings.targetDays = Number(fd.get('days')) || 7; pl.settings.targetPoints = Number(fd.get('pts')) || 100; }); };
+      const pt = $('#pts', root); pt.onsubmit = e => { e.preventDefault(); const fd = new FormData(pt); App.commit('Points settings saved', pl => { pl.settings.targetPoints = Number(fd.get('pts')) || 100; }); };
       const bd = $('#bdel', root); bd.onsubmit = e => {
         e.preventDefault(); const fd = new FormData(bd), kinds = fd.getAll('k'), before = fd.get('before');
         if (!kinds.length) { toast('Tick at least one kind of record.'); return; }
@@ -175,12 +183,14 @@
         <article class="card"><h2>Excel</h2><p class="muted">Person-wise, hours per week and month, day grid, company-wise, meetings, advance and billing days, remarks, points, follow-ups and leave, all with filters for sorting.</p><button type="button" class="btn primary" id="xlsx">${icon('download')}Download Excel</button></article>
         <article class="card"><h2>Backup</h2><p class="muted">A backup file holds the whole timetable. It is <b>not encrypted</b>: keep it somewhere safe.</p>
           <div class="row-btns"><button type="button" class="btn ghost" id="bk">${icon('download')}Save backup</button><label class="btn ghost">${icon('upload')}Load backup<input type="file" id="load" accept=".json" hidden></label></div></article>
+        <article class="card"><h2>Update file</h2><p class="muted">Adds new private details (company engineers, B admin sections, PPV and Architectural schedules) without touching anything already filled in.</p><label class="btn ghost">${icon('upload')}Load update file<input type="file" id="upd" accept=".json" hidden></label></article>
         <article class="card"><h2>Start again</h2><p class="muted">Replace everything with a starting plan file (setup/starting-plan.json). You can undo this straight after.</p><label class="btn ghost danger">${icon('upload')}Load starting plan<input type="file" id="reset" accept=".json" hidden></label></article></div></section>`;
     },
     mount(root) {
       $('#xlsx', root).onclick = exportExcel;
       $('#bk', root).onclick = () => IO.download(IO.json(Store.plan), `timetable-backup-${D.today()}.json`);
       const load = (inp, label) => inp.onchange = async () => { try { const pl = JSON.parse(await inp.files[0].text()); if (!pl.tasks || !pl.people) throw 0; Store.replace(pl, label); toast(`${label}.`, { label: 'Undo', run: () => Store.undo() }); } catch (e) { toast('That is not a timetable file.'); } };
+      const up = $('#upd', root); up.onchange = async () => { try { const u = JSON.parse(await up.files[0].text()); let done = []; App.commit('Update file loaded', pl => { done = Store.applyUpdate(pl, u); }); toast(done.length ? `Updated: ${done.join(', ')}.` : 'Nothing new in that file.'); } catch (e) { toast('That is not an update file.'); } };
       load($('#load', root), 'Backup loaded'); load($('#reset', root), 'Starting plan loaded');
     }
   };
@@ -206,55 +216,6 @@
       const pw = $('#pw', root); if (pw) pw.onsubmit = async e => { e.preventDefault(); const fd = new FormData(pw);
         if (fd.get('a') !== fd.get('b')) { toast('The two passwords are different.'); return; }
         await Vault.Local.changePassword(fd.get('a')); pw.reset(); toast('Password changed. Use the new password next time.'); };
-    }
-  };
-
-  /* ---------- B admin (pattern) ---------- */
-  const adminPage = {
-    render(p) {
-      if (!App.adminOpen()) return `<section><article class="card locked"><div class="lock-big">${icon('lock')}</div><h2>Locked</h2><p class="muted">B's personal hourly schedule for Saturday, Sunday and Monday morning. Open it with B's pattern${Store.plan.settings.bPin ? '' : ' (draw a new one the first time)'}.</p>
-        <button type="button" class="btn primary" id="adm-open">${icon('unlock')}Open with pattern</button></article></section>`;
-      const plan = Store.plan, st = plan.settings, data = App.data;
-      const m = /^\d{4}-\d{2}$/.test(p.m || '') ? p.m : D.month(D.today());
-      const [y, mo] = m.split('-').map(Number);
-      const prev = mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`, next = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
-      const hrsFor = dw => st.adminHours.find(h => h.dow === dw);
-      const dates = D.range(`${m}-01`, `${m}-${String(D.monthLen(y, mo)).padStart(2, '0')}`).filter(d => hrsFor(D.dow(d)));
-      const cards = dates.map(d => {
-        const h = hrsFor(D.dow(d)), a = T.m(h.start), b = T.m(h.end), rec = plan.admin[d] || {};
-        const also = (data.gen.sched['B|' + d] || []).filter(e => e.parts.some(pt => pt[0] < b && pt[1] > a));
-        const hours = []; for (let t = a; t < b; t += 60) hours.push([t, Math.min(b, t + 60)]);
-        const done = hours.filter(([t]) => (rec[T.s(t)] || {}).done).length, used = hours.filter(([t]) => (rec[T.s(t)] || {}).t).length;
-        return `<article class="card adm ${App.isPast(d) ? 'past' : ''}"><header class="sheet-h"><div><h2>${D.nice(d, { long: true })}</h2><p class="muted small">${h.start}–${h.end}${also.length ? ` · Also booked: ${also.map(e => esc(e.o.title + ' ' + Engine.partsText(e.parts))).join(', ')}` : ''}</p></div><span class="count">${done} of ${used} done</span></header>
-          <ul class="adm-hours">${hours.map(([t, e]) => { const r = rec[T.s(t)] || {}; const k = `${d}|${T.s(t)}`; return `<li class="${r.done ? 'done' : ''}">
-            <span class="tm">${T.s(t)}–${T.s(e)}</span><input data-adm="${k}" data-f="t" value="${esc(r.t || '')}" placeholder="Personal / admin work">
-            <select class="imp-sel ${r.imp ? App.IMP[r.imp].cls : ''}" data-adm="${k}" data-f="imp" aria-label="Priority"><option value="">Normal</option>${Object.keys(App.IMP).map(x => `<option value="${x}" ${r.imp === x ? 'selected' : ''}>${App.IMP[x].label}</option>`).join('')}</select>
-            <label class="check"><input type="checkbox" data-adm="${k}" data-f="done" ${r.done ? 'checked' : ''}><span>Done</span></label></li>`; }).join('')}</ul></article>`;
-      }).join('');
-      return `<section><header class="head"><h1>B's admin schedule: ${App.monthName(m)}</h1>
-          <div class="acts noprint"><div class="nav-date"><a class="round" href="#/admin?m=${prev}" aria-label="Previous month">${icon('left')}</a><a class="round" href="#/admin?m=${next}" aria-label="Next month">${icon('right')}</a></div>
-          <button type="button" class="btn ghost" data-print="admin">${icon('print')}Print / save PDF</button><button type="button" class="btn ghost" id="adm-lock">${icon('lock')}Lock</button></div></header>
-        <details class="card noprint"><summary><b>Hours</b> <span class="muted small">${st.adminHours.map(h => `${D.DAYS[h.dow].slice(0, 3)} ${h.start}–${h.end}`).join(', ')}</span></summary>
-          <form id="adm-hours" class="form mt">${st.adminHours.map((h, i) => `<div class="row3"><label>Day<input value="${D.DAYS[h.dow]}" disabled></label><label>From<input type="time" name="a${i}" value="${h.start}" step="1800"></label><label>To<input type="time" name="b${i}" value="${h.end}" step="1800"></label></div>`).join('')}
-          <button type="submit" class="btn primary">Save hours</button></form></details>
-        <div class="grid2">${cards}</div></section>`;
-    },
-    mount(root) {
-      const o = $('#adm-open', root); if (o) o.onclick = () => App.requireB(() => {}, 'Draw B\'s pattern to open the admin schedule.');
-      const l = $('#adm-lock', root); if (l) l.onclick = () => App.lockB();
-      const f = $('#adm-hours', root);
-      if (f) f.onsubmit = e => { e.preventDefault(); const fd = new FormData(f);
-        const hrs = Store.plan.settings.adminHours.map((h, i) => ({ dow: h.dow, start: fd.get('a' + i), end: fd.get('b' + i) }));
-        if (hrs.some(h => T.m(h.end) <= T.m(h.start))) { toast('Each "To" time must be after "From".'); return; }
-        App.commit('Admin hours saved', p => { p.settings.adminHours = hrs; }); };
-      $$('[data-adm]', root).forEach(el => el.onchange = () => {
-        const [d, h] = el.dataset.adm.split('|'), fld = el.dataset.f, a = Store.plan.admin;
-        const r = Object.assign({}, (a[d] || {})[h] || {});
-        if (fld === 'done') { if (el.checked) r.done = true; else delete r.done; } else if (el.value) r[fld] = el.value; else delete r[fld];
-        a[d] = a[d] || {}; if (Object.keys(r).length) a[d][h] = r; else delete a[d][h]; if (!Object.keys(a[d]).length) delete a[d];
-        Store.save(true);
-        if (fld !== 't') { App.keepScroll = true; App.render(); }
-      });
     }
   };
 
@@ -288,9 +249,14 @@
     data.gen.occs.filter(o => o.type === 'advance' || o.type === 'billing').forEach(o => App.payRows(o).forEach(r => pay.push([o.date, o.title, r.start, r.end, r.company === 'general' ? 'All works' : cn(r.company), r.steps, o.people.map(nm).join(', '), (plan.reviews.pay || {})[o.key + '|' + r.company] ? 'Yes' : ''])));
     const sched = [['Date', 'Day', 'Start', 'End', 'Hours', 'Work', 'Kind', 'People', 'Out of station']];
     data.gen.occs.forEach(o => sched.push([o.date, D.DAYS[D.dow(o.date)], o.start, o.end, +(o.mins / 60).toFixed(2), o.title, ty(o.type), o.people.map(nm).join(', '), (o.away || []).map(nm).join(', ')]));
-    const pts = [['Person', 'Company', 'Run', 'Ticked on', 'Due', 'Points']];
-    Object.values(plan.targets).sort((a, b) => a.d < b.d ? -1 : 1).forEach(t => pts.push([nm(t.p), cn(t.c), (t.run || '').replace('@', ' '), t.d, t.due || '', Number(st.targetPoints) || 100]));
-    plan.people.filter(x => !App.isB(x.id)).forEach(x => pts.push([nm(x.id), 'TOTAL', '', '', '', App.points(x.id)]));
+    const pts = [['Marked on', 'Remark', 'Positive / negative', 'Employee', 'Dates', 'Points']];
+    (plan.marks || []).forEach(m => { const by = {}; m.cells.forEach(c => { (by[c.pid] = by[c.pid] || []).push(c.date); });
+      Object.keys(by).forEach(pid => pts.push([m.at || '', m.text, m.tone === 'neg' ? 'Negative' : 'Positive', nm(pid), by[pid].sort().join(', '), m.tone === 'neg' ? 0 : Number(st.targetPoints) || 100])); });
+    App.staff().forEach(x => pts.push(['', 'TOTAL', '', nm(x.id), '', App.points(x.id)]));
+    const acts = [['Company', 'Follow-up date', 'Action point', 'Done']];
+    Object.keys(plan.actions || {}).sort().forEach(k => { const [c, d] = k.split('|'); plan.actions[k].forEach(a => acts.push([cn(c), d, a.t, a.done ? 'Yes' : ''])); });
+    const cms = [['Meeting day', 'Employee', 'Task', 'Days committed', 'Due']];
+    (plan.commits || []).forEach(c => cms.push([c.start, nm(c.pid), c.task, c.days, c.due]));
     const fus = [['Company', 'Date', '6 pm follow-up points']];
     Object.keys(plan.followups).sort().forEach(k => { const [c, d] = k.split('|'); fus.push([cn(c), d, plan.followups[k]]); });
     const dc = [['Date', 'Person', 'On leave', 'Works completed', 'Sufficient', 'On time', 'Timetable updated for tomorrow']];
@@ -298,7 +264,7 @@
       plan.people.filter(x => !App.isB(x.id)).forEach(x => { const e = (r.emp || {})[x.id] || {}; dc.push([d, nm(x.id), App.onLeave(x.id, d) ? 'Yes' : '', e.works || '', e.ok === 'yes' ? 'Sufficient' : e.ok === 'no' ? 'Not sufficient' : '', e.timely ? 'Yes' : '', r.tomorrow ? 'Yes' : '']); }); });
     const lv = [['Person', 'Date']];
     Object.keys(plan.leave).sort().forEach(k => { const [pid, d] = k.split('|'); lv.push([nm(pid), d]); });
-    IO.download(IO.xlsx([{ name: 'Person-wise', rows: pw }, { name: 'Hours', rows: hrs }, { name: 'Day grid', rows: daily }, { name: 'Company-wise', rows: comp }, { name: 'Meetings', rows: meet }, { name: 'Advance & billing', rows: pay }, { name: 'All work', rows: sched }, { name: 'Remarks', rows: rem }, { name: 'Points', rows: pts }, { name: 'Company follow-ups', rows: fus }, { name: 'Leave', rows: lv }, { name: 'Daily check', rows: dc }]), `timetable-${st.start}-to-${st.end}.xlsx`);
+    IO.download(IO.xlsx([{ name: 'Person-wise', rows: pw }, { name: 'Hours', rows: hrs }, { name: 'Day grid', rows: daily }, { name: 'Company-wise', rows: comp }, { name: 'Meetings', rows: meet }, { name: 'Advance & billing', rows: pay }, { name: 'All work', rows: sched }, { name: 'Remarks', rows: rem }, { name: 'Points', rows: pts }, { name: 'Action points', rows: acts }, { name: 'Commitments', rows: cms }, { name: 'Company follow-ups', rows: fus }, { name: 'Leave', rows: lv }, { name: 'Daily check', rows: dc }]), `timetable-${st.start}-to-${st.end}.xlsx`);
     toast('Excel downloaded.');
   }
   App.exportExcel = exportExcel;

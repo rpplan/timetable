@@ -51,7 +51,7 @@
       return `<button type="button" class="tchip sm hp ${lv === 'high' ? 'on' : ''}" data-impseg="${esc(key)}|${esc(pid)}|high" aria-pressed="${lv === 'high'}">${lv === 'high' ? '★ High priority' : '☆ Normal priority'}</button>`;
     },
 
-    /* ---------- clearance forms (N, R, S, P/P1) ---------- */
+    /* ---------- clearance forms (N, R, S, P) ---------- */
     clearBox(key, pid, date) {
       if (App.isB(pid) || date > D.today()) return '';
       const on = !!Store.plan.clear[key + '|' + pid];
@@ -67,7 +67,8 @@
       if (today <= v.due) return 'open';
       return 'missed';
     },
-    points(pid) { const per = Number(Store.plan.settings.targetPoints) || 100; return Object.values(Store.plan.targets).filter(x => x.p === pid).length * per; },
+    /* Points for target completion: every positive mark on the monthly schedule that includes this employee */
+    points(pid) { const per = Number(Store.plan.settings.targetPoints) || 100; return (Store.plan.marks || []).filter(m => m.tone === 'pos' && m.cells.some(c => c.pid === pid)).length * per; },
     targetRow(v) {
       const st = App.targetState(v), per = Number(Store.plan.settings.targetPoints) || 100;
       const name = `${App.cname(v.company)}${v.cycle ? ' (' + v.cycle + ')' : ''}`;

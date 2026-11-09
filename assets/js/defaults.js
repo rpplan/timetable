@@ -4,10 +4,10 @@
 (function (g) {
   'use strict';
   g.DEFAULT_PLAN = {
-    version: 7,
+    version: 8,
     title: 'Works timetable',
     settings: {
-      start: '2026-11-05', end: '2026-12-09', workStart: '10:30', workEnd: '19:00',
+      start: '2026-11-05', end: '2026-12-31', workStart: '10:30', workEnd: '19:00',
       slots: [{ start: '10:30', end: '13:30' }, { start: '14:30', end: '19:00' }],
       lunchStart: '13:30', lunchEnd: '14:30', sundayOff: true, sundayStreak: false, maxHours: 9,
       targetDays: 7, targetPoints: 100, retentionDays: 45, bPin: '', idleMinutes: 10,

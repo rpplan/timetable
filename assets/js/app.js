@@ -45,6 +45,28 @@
     slotLabel(i) { const s = this.data.gen.slots[i]; return s ? `Slot ${i + 1} ${T.s(s[0])}–${T.s(s[1])}` : ''; },
     slotsText() { return this.data.gen.slots.map((s, i) => this.slotLabel(i)).join(' and '); },
     remark(key, pid) { return (Store.plan.remarks || {})[key + '|' + pid] || {}; },
+    /* Employees shown on the timetable pages (B has his own B admin page) */
+    staff() { return Store.plan.people.filter(x => x.id !== 'B'); },
+    /* Work label with the company names in bold */
+    labelHtml(o, pid) {
+      let s = esc(this.personLabel(o, pid));
+      Store.plan.companies.map(c => c.name).sort((a, b) => b.length - a.length).forEach(n => {
+        const e = esc(n); if (s.includes(e)) s = s.split(e).join(`\u0000${e}\u0001`);
+      });
+      return s.replace(/\u0000/g, '<b class="co">').replace(/\u0001/g, '</b>');
+    },
+    /* Point-wise notes of a work (and the older one-line note) */
+    notesOf(o) { return [].concat(o.note ? [o.note] : [], o.points || []).filter(Boolean); },
+    notesHtml(o) { const n = this.notesOf(o); return n.length ? `<ul class="pts-notes">${n.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''; },
+    /* The working day before this date (skips Sundays and holidays): yesterday's follow-up action points show today */
+    prevWorkDay(date) { let d = date; for (let i = 0; i < 10; i++) { d = D.add(d, -1); if (D.dow(d) !== 0 && !this.data.gen.hol[d]) return d; } return D.add(date, -1); },
+    actionsFor(date) {
+      const prev = this.prevWorkDay(date), out = [];
+      Store.plan.companies.forEach(c => { const k = c.id + '|' + prev, a = Store.plan.actions[k]; if (Array.isArray(a) && a.some(x => x.t)) out.push({ company: c, key: k, from: prev, items: a.filter(x => x.t) }); });
+      return out;
+    },
+    companyOwners(cid) { const c = Store.plan.companies.find(x => x.id === cid); return c ? Store.plan.people.filter(x => ((Store.plan.responsibilities[x.id] || {})[c.group] || []).includes(cid)).map(x => x.id) : []; },
+    commitsFor(pid, date) { return (Store.plan.commits || []).filter(c => c.pid === pid && c.start <= date && date <= c.due); },
     /* Site-window rule: null when the date is allowed for this company group, otherwise a message */
     windowMsg(group, date) {
       const days = Engine.windowDays(Store.plan, group); if (!days || days.includes(D.day(date))) return null;
@@ -118,6 +140,7 @@
       let [v, q] = location.hash.replace(/^#\/?/, '').split('?');
       const params = Object.fromEntries(new URLSearchParams(q || ''));
       if (v === 'people') v = 'employees';
+      if (v === 'week') { v = 'month'; params.view = 'week'; }
       if (v === 'edit') {   // the Edit tab was removed: old links go to the page that now holds that part
         const to = { day: 'today', billing: 'billing', meetings: 'meetings', plan: 'meetings', admin: 'admin', week: 'chart', companies: 'companies', company: 'companies' }[params.tab] || 'settings';
         const open = { data: 'data', who: 'who', office: 'hours', records: 'records', security: 'login', problems: 'problems', work: 'work' }[params.tab];
@@ -231,7 +254,7 @@
             <label>From<input type="time" name="start" value="${o.start}" step="300" required></label>
             <label>To<input type="time" name="end" value="${o.end}" step="300" required></label></div>
             <fieldset><legend>Who</legend>${this.peoplePicker('pp', o.people)}</fieldset>
-            <label>Note<input name="note" value="${esc(o.note || '')}" placeholder="Optional note for this day"></label>
+            <label>Notes for this day, one point per line<textarea name="points" rows="3" placeholder="Point 1&#10;Point 2">${esc(this.notesOf(o).join('\n'))}</textarea></label>
             <label class="check"><input type="checkbox" name="done" ${o.status === 'done' ? 'checked' : ''}> Done</label>
           </form>
           <p class="muted small">Changing the times here fixes them for this day; the rest of each person's day is fitted around them.</p>
@@ -245,7 +268,8 @@
           $$('[data-away]', m).forEach(c => c.onchange = () => { const [rk, pid] = c.dataset.away.split('|'); closeModal(); App.setAway(rk, pid, c.checked); });
           $('#occ-form', m).onsubmit = e => {
             e.preventDefault(); const fd = new FormData(e.target);
-            const patch = { date: fd.get('date'), start: fd.get('start'), end: fd.get('end'), note: fd.get('note'), people: fd.getAll('pp') };
+            const points = String(fd.get('points') || '').split('\n').map(x => x.replace(/^[\s•*-]+/, '').trim()).filter(Boolean);
+            const patch = { date: fd.get('date'), start: fd.get('start'), end: fd.get('end'), note: '', points, people: fd.getAll('pp') };
             if (T.m(patch.end) <= T.m(patch.start)) { toast('The end time must be after the start time.'); return; }
             if (App.isPast(patch.date)) { toast('Pick today or a later day.'); return; }
             if (Engine.inGap(patch.start, plan.settings)) { toast(`Start inside a working slot: ${App.slotsText()}.`); return; }
@@ -257,7 +281,7 @@
                 if (patch.date !== o.planned) clean.date = patch.date;
                 if (patch.start !== t.start) clean.start = patch.start;
                 if (patch.end !== t.end) clean.end = patch.end;
-                if (patch.note) clean.note = patch.note;
+                if (points.length) clean.points = points;
                 if (JSON.stringify(patch.people.slice().sort()) !== JSON.stringify(Engine.normPeople(plan, t.people).slice().sort())) clean.people = patch.people;
                 if (Object.keys(clean).length) p.overrides[key] = Object.assign({}, p.overrides[key] && p.overrides[key].deleted ? {} : {}, clean); else delete p.overrides[key];
               }

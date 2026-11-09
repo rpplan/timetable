@@ -98,6 +98,7 @@
       return false;
     };
     const pOff = (pid, s) => personOff(plan, pid, s);
+    const workOn = plan.workOn || {};
     const offFor = (s, ppl, streak) => isOff(s, streak) || ppl.some(pid => pOff(pid, s));
     const why = (s, ppl) => hol[s] || (D.dow(s) === 0 ? 'Sunday' : '') || ppl.filter(pid => pOff(pid, s)).map(pid => `${personName(plan, pid)}'s day off`).join(', ') || 'day off';
     const taskById = {}; plan.tasks.forEach(t => { taskById[t.id] = t; });
@@ -112,7 +113,7 @@
         key, taskId: t.id, title: t.title, type: t.type || 'office', planned, date,
         people: normPeople(plan, t.people), start: t.start, end: t.end,
         companies: (t.companies || []).slice(), details: t.details || '',
-        siteGroup: t.siteGroup || null, cycle: t.cycle || null, runKey: null, noSite: !!t.noSite,
+        siteGroup: t.siteGroup || null, cycle: t.cycle || null, runKey: null, noSite: !!t.noSite, points: (t.points || []).slice(),
         shifted: false, moved: false, extra: false
       }, extra || {});
     }
@@ -142,11 +143,13 @@
             else pending.push({ t, key, planned: p, runKey, streak, reason: why(p, ppl) });
             return;
           }
+          const wk = ppl.filter(pid => workOn[pid + '|' + p]);     // chose to work on a holiday / Sunday / day off
           if (isOff(p, streak)) {
+            if (wk.length) { occs.push(makeOcc(t, key, p, p, { runKey, people: wk, holidayWork: true })); return; }
             if (inWin(p)) notes.push({ level: 'info', kind: 'skipped', key, date: p, taskId: t.id, text: `${t.title} is not held on ${D.nice(p)} (${hol[p] || 'Sunday'}).` });
             return;
           }
-          const here = ppl.filter(pid => !pOff(pid, p));
+          const here = ppl.filter(pid => !pOff(pid, p) || wk.includes(pid));
           if (!here.length) return;
           occs.push(makeOcc(t, key, p, p, { runKey, people: here, offToday: ppl.filter(x => !here.includes(x)) }));
         });
@@ -178,6 +181,7 @@
       if (ov.deleted) return false;
       ['date', 'start', 'end', 'title', 'note'].forEach(k => { if (ov[k] != null && ov[k] !== '') o[k] = ov[k]; });
       if (ov.people) o.people = normPeople(plan, ov.people);
+      if (Array.isArray(ov.points)) o.points = ov.points.slice();
       if (ov.companies) o.companies = ov.companies.slice();
       if (ov.date && ov.date !== o.planned) o.moved = true;
       if (ov.start || ov.end) o.timeSet = true;     // times set by hand are kept as they are

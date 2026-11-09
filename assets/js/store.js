@@ -53,7 +53,7 @@
       this.change(label || 'Load plan', p => { Object.keys(p).forEach(k => delete p[k]); Object.assign(p, migrate(clone(plan))); if (!p.settings.bPin) p.settings.bPin = keepPin; });
     },
 
-    /* Daily clean-up: N, R, S, P/P1 records older than the retention period (45 days) are deleted. B's are kept. */
+    /* Daily clean-up: N, R, S, P records older than the retention period (45 days) are deleted. B's are kept. */
     cleanUp() {
       const n = purge(this.plan, todayStr());
       if (n) { this.save(true); this.purged = n; }
@@ -65,7 +65,7 @@
     clone
   };
 
-  const STORES = ['overrides', 'visitOverrides', 'status', 'reviews', 'away', 'remarks', 'importance', 'clear', 'leave', 'targets', 'followups', 'admin'];
+  const STORES = ['overrides', 'visitOverrides', 'status', 'reviews', 'away', 'remarks', 'importance', 'clear', 'leave', 'targets', 'followups', 'admin', 'workOn', 'actions', 'badmin'];
   function migrate(p) {
     const d = g.DEFAULT_PLAN;
     p = p || {};
@@ -93,7 +93,18 @@
       if (n && Array.isArray(n.other) && n.other.length === 2 && !p.settings.orderSwapped) { n.other = n.other.slice().reverse(); p.settings.orderSwapped = true; }
     }
     if (!p.paySheets || typeof p.paySheets !== 'object') p.paySheets = {};
-    p.version = 7;
+    if (!Array.isArray(p.marks)) p.marks = [];
+    if (!Array.isArray(p.commits)) p.commits = [];
+    if (p.billList === undefined) p.billList = null;
+    if ((p.version || 1) < 8) {
+      if (p.settings.end < '2026-12-31') p.settings.end = '2026-12-31';      // timetable runs to 31 December 2026
+      const fix = s => typeof s === 'string' ? s.replace(/P \/ P1/g, 'P').replace(/\bP\/P1\b/g, 'P').replace(/\bP1\b/g, 'P') : s;   // "P1" is called "P" everywhere
+      p.people.forEach(x => { x.name = fix(x.name); x.role = fix(x.role); });
+      Object.values(p.responsibilities).forEach(r => { r.duties = fix(r.duties); });
+      p.tasks.forEach(t => { t.title = fix(t.title); t.details = fix(t.details); (t.agenda || []).forEach(a => { a.item = fix(a.item); }); });
+      p.notes = p.notes.map(fix);
+    }
+    p.version = 8;
     return p;
   }
 
@@ -120,7 +131,7 @@
       const pid = k.slice(k.lastIndexOf('|') + 1), d = dateOfKey(k, extraDate);
       if (pid !== B && d && d < cut) { delete p[st][k]; n++; }
     }));
-    Object.keys(p.leave).forEach(k => { const [pid, d] = k.split('|'); if (pid !== B && d < cut) { delete p.leave[k]; n++; } });
+    ['leave', 'workOn'].forEach(st => Object.keys(p[st]).forEach(k => { const [pid, d] = k.split('|'); if (pid !== B && d < cut) { delete p[st][k]; n++; } }));
     ['overrides', 'status'].forEach(st => Object.keys(p[st]).forEach(k => {
       if (k.startsWith('x:')) return;
       const d = dateOfKey(k, extraDate); if (!d || d >= cut) return;
@@ -143,10 +154,27 @@
     if (k.has('checks')) { const days = (p.reviews.days || {}); Object.keys(days).forEach(d => { if (d < before) delete days[d]; }); }
     if (k.has('pay')) { const pay = (p.reviews.pay || {}); Object.keys(pay).forEach(key => { if (old(key)) delete pay[key]; }); }
     if (k.has('targets')) Object.keys(p.targets).forEach(key => { if ((p.targets[key].d || '') < before) delete p.targets[key]; });
-    if (k.has('followups')) Object.keys(p.followups).forEach(key => { if (old(key)) delete p.followups[key]; });
-    if (k.has('admin')) Object.keys(p.admin).forEach(d => { if (d < before) delete p.admin[d]; });
+    if (k.has('marks')) p.marks = (p.marks || []).filter(m => !m.cells.every(c => c.date < before));
+    if (k.has('followups')) { Object.keys(p.followups).forEach(key => { if (old(key)) delete p.followups[key]; }); Object.keys(p.actions || {}).forEach(key => { if (old(key)) delete p.actions[key]; }); }
+    if (k.has('admin')) { Object.keys(p.admin).forEach(d => { if (d < before) delete p.admin[d]; }); const b = p.badmin || {}; [b.days, (b.ppv || {}).days, (b.arch || {}).days].forEach(o => Object.keys(o || {}).forEach(d => { if (d < before) delete o[d]; })); }
   }
 
-  Object.assign(Store, { migrate, purge, deleteBRecords, mergeRecords, dateOfKey });
+  /* Update file (setup/update-*.json): private details that must not be in the public website code */
+  function applyUpdate(p, u) {
+    if (!u || u.kind !== 'works-timetable-update') throw new Error('not an update file');
+    const done = [];
+    if (u.engineers) { Object.keys(u.engineers).forEach(cid => { const c = p.companies.find(x => x.id === cid); if (c && !(c.engineers || []).length) { c.engineers = clone(u.engineers[cid]); done.push(c.name); } }); }
+    if (u.badmin) {
+      const b = p.badmin = p.badmin || {}; const keep = { days: b.days || {}, ppv: (b.ppv || {}).days || {}, arch: (b.arch || {}).days || {}, listText: b.listText || {} };
+      Object.assign(b, clone(u.badmin));
+      b.days = keep.days; b.listText = keep.listText;
+      if (b.ppv) b.ppv.days = keep.ppv; if (b.arch) b.arch.days = keep.arch;
+      done.push('B admin');
+    }
+    if (u.tasks) u.tasks.forEach(t => { if (!p.tasks.some(x => x.id === t.id)) { p.tasks.push(clone(t)); done.push(t.title); } });
+    return done;
+  }
+
+  Object.assign(Store, { applyUpdate, migrate, purge, deleteBRecords, mergeRecords, dateOfKey });
   g.Store = Store;
 })(window);

@@ -1,23 +1,35 @@
-/* Link chart: employees on the left, companies in their three groups on the right, and lines for who works where
-   at the moment chosen on the time bar. Drag nodes to arrange them; drag from the dot of an employee onto a
-   company to give work; click a line to hand it over, remove it or copy it to more days or hours.
+/* Link chart: the team in the middle, companies around it in four coloured islands, and lines (one colour per
+   employee, gold for high priority) for who works where at the moment chosen on the time bar. Drag boxes to arrange
+   them; drag from the ⊕ of an employee onto a company to give work; click a line to make it high priority, hand it
+   over, remove it or copy it to more days or hours.
    Everything here reads and writes the same plan as the rest of the website. */
 (function () {
   'use strict';
   const { D, T } = Engine;
   const { esc, $, $$, icon, toast, modal, closeModal } = UI;
   const V = App.views;
-  /* Two layouts: wide (laptop, employees on the left) and tall (phone, employees on top). The chart is sized to the window. */
-  const LABEL = { people: 'Employees', office: 'Office & meetings', main: 'Main contractors', outstation: 'Outstation sites', other: 'Other contractors' };
+  /* Two layouts. Wide (laptop): the team in the middle, companies spread around it in four coloured islands
+     (main contractors on top, outstation on the right, other contractors below, office & meetings on the left).
+     Tall (phone): the team on top and the islands below one another. The chart is sized to the window. */
+  const ISLE = {
+    people: { label: 'Team', color: '#64748b' },
+    office: { label: 'Office & meetings', color: '#5c8a1e' },
+    main: { label: 'Main contractors', color: '#0f8b8d' },
+    outstation: { label: 'Outstation sites', color: '#d9480f' },
+    other: { label: 'Other contractors', color: '#5f3dc4' }
+  };
   const LAYOUTS = {
-    wide: { W: 1200, H: 600, pw: 180, ph: 46, nw: 172, nh: 34, cols: { people: 1, office: 1, main: 5, outstation: 5, other: 5 },
-      REG: { people: { x: 12, y: 12, w: 208, h: 420 }, office: { x: 12, y: 444, w: 208, h: 144 }, main: { x: 232, y: 12, w: 956, h: 150 }, outstation: { x: 232, y: 174, w: 956, h: 150 }, other: { x: 232, y: 336, w: 956, h: 252 } } },
-    tall: { W: 600, H: 1180, pw: 176, ph: 46, nw: 270, nh: 36, cols: { people: 3, office: 2, main: 2, outstation: 2, other: 2 },
-      REG: { people: { x: 8, y: 8, w: 584, h: 150 }, office: { x: 8, y: 168, w: 584, h: 86 }, main: { x: 8, y: 264, w: 584, h: 200 }, outstation: { x: 8, y: 474, w: 584, h: 200 }, other: { x: 8, y: 684, w: 584, h: 488 } } }
+    wide: { W: 1400, H: 660, nw: 158, nh: 36, pr: 40,
+      REG: { people: { x: 460, y: 190, w: 480, h: 284, round: true }, main: { x: 200, y: 6, w: 1000, h: 176, shape: 'top', rows: 1 }, outstation: { x: 1200, y: 140, w: 194, h: 350, shape: 'right' },
+        other: { x: 120, y: 486, w: 1160, h: 168, shape: 'bottom', rows: 2 }, office: { x: 6, y: 200, w: 194, h: 260, shape: 'left' } } },
+    tall: { W: 600, H: 1300, nw: 280, nh: 46, pr: 34,
+      REG: { people: { x: 8, y: 8, w: 584, h: 150, shape: 'row' }, office: { x: 8, y: 170, w: 584, h: 96, cols: 2 }, main: { x: 8, y: 278, w: 584, h: 214, cols: 2 },
+        outstation: { x: 8, y: 504, w: 584, h: 214, cols: 2 }, other: { x: 8, y: 730, w: 584, h: 562, cols: 2 } } }
   };
   let L = LAYOUTS.wide, REG = L.REG;
-  const posKey = () => L === LAYOUTS.tall ? 'posTall' : 'pos';
+  const posKey = () => L === LAYOUTS.tall ? 'posRT' : 'posR';
   const OFFICE_NODES = [{ id: 'office', name: 'Office work' }, { id: 'meeting', name: 'Meetings' }];
+  const GOLD = '#e2a400';
   const state = { scale: 'half', idx: null, playing: false, speed: 700, timer: null, sel: null, drag: null };
 
   /* ---------- time steps ---------- */
@@ -57,7 +69,7 @@
     const plan = Store.plan, map = {};
     const dates = step.kind === 'month' ? App.data.gen.dates.filter(d => D.month(d) === step.m) : [step.date];
     const from = step.kind === 'half' ? step.from : 0, to = step.kind === 'half' ? step.to : 1440;
-    dates.forEach(d => plan.people.forEach(p => (App.data.gen.sched[p.id + '|' + d] || []).forEach(e => targetsOf(e, p.id, from, to).forEach(t => {
+    dates.forEach(d => team().forEach(p => (App.data.gen.sched[p.id + '|' + d] || []).forEach(e => targetsOf(e, p.id, from, to).forEach(t => {
       const k = p.id + '>' + t.node; (map[k] = map[k] || { key: k, pid: p.id, node: t.node, type: t.o.type, items: [] }).items.push(Object.assign({ date: d }, t));
     }))));
     return Object.values(map);
@@ -71,88 +83,150 @@
   }
 
   /* ---------- nodes & layout ---------- */
+  const team = () => App.staff();
+  function place(region, i, n) {
+    const r = REG[region];
+    if (L === LAYOUTS.tall) {
+      if (r.shape === 'row') { const cw = r.w / n; return [r.x + cw * i + cw / 2, r.y + 66]; }
+      const cols = r.cols || 2, rows = Math.ceil(n / cols), cw = (r.w - 16) / cols, rh = Math.min(64, (r.h - 50) / Math.max(1, rows));
+      return [r.x + 8 + cw * (i % cols) + cw / 2, r.y + 46 + rh * Math.floor(i / cols) + rh / 2];
+    }
+    if (region === 'people') { const a = (-135 + i * (360 / n)) * Math.PI / 180, cx = r.x + r.w / 2, cy = r.y + r.h / 2 + 6; return [cx + Math.cos(a) * 150, cy + Math.sin(a) * 92]; }
+    if (r.shape === 'top' || r.shape === 'bottom') {
+      const rows = r.rows || 1, per = Math.ceil(n / rows), row = Math.floor(i / per), k = i % per, cnt = Math.min(per, n - row * per);
+      const pad = r.shape === 'top' ? 90 : 70 + (row % 2) * 30, t = cnt > 1 ? k / (cnt - 1) : .5, x = r.x + pad + t * (r.w - 2 * pad);
+      const bow = (2 * t - 1) ** 2;   // the ends bend towards the team, so the island wraps around the middle
+      const base = r.shape === 'top' ? r.y + 62 + bow * 84 : r.y + r.h - 46 - row * 56 - bow * (66 - row * 18);
+      return [x, base];
+    }
+    const t = n > 1 ? i / (n - 1) : .5, y = r.y + 64 + t * (r.h - 100), bow = (2 * t - 1) ** 2;
+    return [r.shape === 'right' ? r.x + r.w / 2 + 12 - (1 - bow) * 14 : r.x + r.w / 2 - 12 + (1 - bow) * 14, y];
+  }
   function nodes() {
     const plan = Store.plan, out = [];
-    plan.people.forEach(p => out.push({ id: 'p:' + p.id, pid: p.id, region: 'people', name: p.name, color: p.color, w: L.pw, h: L.ph }));
+    team().forEach(p => out.push({ id: 'p:' + p.id, pid: p.id, region: 'people', name: p.name, color: p.color, r: L.pr, w: L.pr * 2, h: L.pr * 2 }));
     OFFICE_NODES.forEach(n => out.push({ id: 'n:' + n.id, target: n.id, region: 'office', name: n.name, w: L.nw, h: L.nh }));
     plan.companies.filter(c => REG[c.group]).forEach(c => out.push({ id: 'c:' + c.id, target: c.id, region: c.group, name: c.name, w: L.nw, h: L.nh }));
     const count = {}; out.forEach(n => { count[n.region] = (count[n.region] || 0) + 1; });
     const seen = {};
     out.forEach(n => {
-      const r = REG[n.region], i = (seen[n.region] = (seen[n.region] || 0) + 1) - 1;
-      const cols = L.cols[n.region], rows = Math.ceil(count[n.region] / cols);
-      const cw = (r.w - 16) / cols, rh = Math.min(84, (r.h - 34) / Math.max(1, rows));
-      const def = [r.x + 8 + cw * (i % cols) + cw / 2, r.y + 30 + rh * Math.floor(i / cols) + rh / 2];
-      const s = (plan.chart[posKey()] || {})[n.id];
+      const i = (seen[n.region] = (seen[n.region] || 0) + 1) - 1, def = place(n.region, i, count[n.region]);
+      const s = ((plan.chart || {})[posKey()] || {})[n.id];
       n.x = s ? clampX(n, s[0]) : def[0]; n.y = s ? clampY(n, s[1]) : def[1];
     });
     return out;
   }
-  const clampX = (n, x) => { const r = REG[n.region]; return Math.max(r.x + n.w / 2 + 4, Math.min(r.x + r.w - n.w / 2 - 4, x)); };
-  const clampY = (n, y) => { const r = REG[n.region]; return Math.max(r.y + 26 + n.h / 2, Math.min(r.y + r.h - n.h / 2 - 4, y)); };
+  const clampX = (n, x) => Math.max(n.w / 2 + 4, Math.min(L.W - n.w / 2 - 4, x));
+  const clampY = (n, y) => Math.max(n.h / 2 + 4, Math.min(L.H - n.h / 2 - 4, y));
   const short = (s, n) => s.length > n ? s.slice(0, n - 1) + '…' : s;
+  const isHigh = l => l.items.some(it => App.imp(it.o.key, it.pid) === 'high');
 
   /* ---------- drawing ---------- */
+  function islandShape(k) {
+    const r = REG[k];
+    if (r.round) { const cx = r.x + r.w / 2, cy = r.y + r.h / 2 + 6; return `<ellipse cx="${cx}" cy="${cy}" rx="${r.w / 2}" ry="${r.h / 2}"/>`; }
+    if (L === LAYOUTS.wide && (r.shape === 'top' || r.shape === 'bottom')) {   // a curved band that wraps around the team
+      const x1 = r.x, x2 = r.x + r.w, mid = (x1 + x2) / 2;
+      if (r.shape === 'top') return `<path d="M${x1 + 22},${r.y} H${x2 - 22} Q${x2},${r.y} ${x2},${r.y + 22} V${r.y + r.h} Q${mid},${r.y + r.h - 150} ${x1},${r.y + r.h} V${r.y + 22} Q${x1},${r.y} ${x1 + 22},${r.y} Z"/>`;
+      const y1 = r.y - 12, y2 = r.y + r.h;
+      return `<path d="M${x1},${y1} Q${mid},${y1 + 150} ${x2},${y1} V${y2 - 22} Q${x2},${y2} ${x2 - 22},${y2} H${x1 + 22} Q${x1},${y2} ${x1},${y2 - 22} Z"/>`;
+    }
+    return `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="22"/>`;
+  }
   function draw(root) {
-    const cv = $('.lc-canvas', root); L = cv && cv.clientWidth && cv.clientWidth < 640 ? LAYOUTS.tall : LAYOUTS.wide; REG = L.REG;
+    const cv = $('.lc-canvas', root); L = cv && cv.clientWidth && cv.clientWidth < 700 ? LAYOUTS.tall : LAYOUTS.wide; REG = L.REG;
     const list = steps(); if (state.idx == null || state.idx >= list.length) state.idx = defaultIdx(list);
     const step = list[state.idx], ns = nodes(), byId = {}; ns.forEach(n => { byId[n.id] = n; });
-    const links = linksAt(step);
+    const links = linksAt(step).filter(l => byId['p:' + l.pid]);
     const tgt = t => byId['c:' + t] || byId['n:' + t];
-    const path = l => {
+    const tall = L === LAYOUTS.tall, cx = L.W / 2, cy = REG.people.y + REG.people.h / 2;
+    const path = (l, k, nk) => {
       const a = byId['p:' + l.pid], b = tgt(l.node); if (!a || !b) return '';
-      if (L === LAYOUTS.tall) { const x1 = a.x, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y - b.h / 2, my = (y1 + y2) / 2; return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`; }
-      const x1 = a.x + a.w / 2, y1 = a.y;
-      if (b.region === 'office') { const x2 = b.x + b.w / 2, y2 = b.y; return `M${x1},${y1} C${x1 + 70},${y1} ${x2 + 70},${y2} ${x2},${y2}`; }
-      const x2 = b.x - b.w / 2, y2 = b.y, mx = (x1 + x2) / 2;
-      return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+      if (tall) { const x1 = a.x, y1 = a.y + a.r, x2 = b.x, y2 = b.y - b.h / 2, my = (y1 + y2) / 2; return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`; }
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+      const x1 = a.x + dx / len * a.r, y1 = a.y + dy / len * a.r;
+      // end on the side of the box that faces the person
+      const side = Math.abs(dx) * (b.h / 2) > Math.abs(dy) * (b.w / 2), ex = side ? b.x - Math.sign(dx) * b.w / 2 : b.x, ey = side ? b.y : b.y - Math.sign(dy) * b.h / 2;
+      // fan out from the middle: first away from the centre of the team, then into the company
+      const ox = a.x - cx, oy = a.y - cy, ol = Math.hypot(ox, oy) || 1, spread = (k - (nk - 1) / 2) * 14;
+      const c1x = x1 + ox / ol * 70 + (-dy / len) * spread, c1y = y1 + oy / ol * 70 + (dx / len) * spread;
+      const c2x = ex - dx / len * 90, c2y = ey - dy / len * 90;
+      return `M${x1.toFixed(1)},${y1.toFixed(1)} C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`;
     };
+    const perNode = {}; links.forEach(l => { (perNode[l.pid] = perNode[l.pid] || []).push(l); });
     const active = new Set(links.map(l => 'c:' + l.node).concat(links.map(l => 'n:' + l.node), links.map(l => 'p:' + l.pid)));
+    const selL = links.find(l => l.key === state.sel);
     const svg = $('#lc-svg', root);
-    svg.setAttribute('viewBox', `0 0 ${L.W} ${L.H}`); svg.classList.toggle('tall', L === LAYOUTS.tall);
-    svg.innerHTML = `${Object.keys(REG).map(k => { const r = REG[k]; return `<g class="reg reg-${k}"><rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="14"/><text x="${r.x + 12}" y="${r.y + 19}">${esc(LABEL[k])}<tspan class="rd">${k === 'main' || k === 'other' || k === 'outstation' ? esc(dayNote(k)) : ''}</tspan></text></g>`; }).join('')}
-      <g class="links">${links.map(l => { const ty = App.TYPES[l.type] || App.TYPES.office; const n = l.items.length; return `<path class="lk ${state.sel === l.key ? 'sel' : ''} ${state.playing ? 'flow' : ''}" d="${path(l)}" data-link="${esc(l.key)}" style="--c:${ty.color};stroke-width:${Math.min(9, 2.5 + (step.kind === 'half' ? 0 : Math.log2(n) * 1.6))}"><title>${esc(App.pname(l.pid))} → ${esc(l.items[0].label)}${n > 1 ? ` (${n})` : ''}</title></path>`; }).join('')}</g>
-      <g class="nodes">${ns.map(n => {
-        const on = active.has(n.id), st = n.pid ? statusAt(step, n.pid) : '';
-        const now = n.pid ? links.filter(l => l.pid === n.pid).map(l => l.items[0].label) : [];
-        return `<g class="nd ${n.pid ? 'person' : 'co'} ${on ? 'on' : ''} ${st ? 'quiet' : ''}" data-node="${esc(n.id)}" transform="translate(${n.x},${n.y})" style="${n.color ? `--pc:${n.color}` : ''}">
-          <rect x="${-n.w / 2}" y="${-n.h / 2}" width="${n.w}" height="${n.h}" rx="${n.pid ? 12 : 9}"/>
-          ${n.pid ? `<circle class="av-c" cx="${-n.w / 2 + 22}" cy="0" r="14"/><text class="av-t" x="${-n.w / 2 + 22}" y="4">${esc(n.pid)}</text>
-            <text class="nm" x="${-n.w / 2 + 44}" y="-4">${esc(short(n.name, 14))}</text><text class="sub" x="${-n.w / 2 + 44}" y="12">${esc(short(st || (step.kind === 'month' ? `${links.filter(l => l.pid === n.pid).length} places` : now[0] || 'Free'), 22))}</text>
-            <circle class="port" cx="${L === LAYOUTS.tall ? 0 : n.w / 2}" cy="${L === LAYOUTS.tall ? n.h / 2 : 0}" r="${L === LAYOUTS.tall ? 11 : 8}" data-port="${esc(n.pid)}"><title>Drag onto a company to give ${esc(n.name)} work</title></circle>`
-            : `<text class="nm" x="0" y="4" text-anchor="middle">${esc(short(n.name, 22))}</text><title>${esc(n.name)}</title>`}</g>`;
-      }).join('')}</g><path id="lc-rubber" class="rubber" d=""/>`;
+    svg.setAttribute('viewBox', `0 0 ${L.W} ${L.H}`); svg.classList.toggle('tall', tall); svg.classList.toggle('has-sel', !!selL);
+    const islands = Object.keys(REG).map(k => { const r = REG[k], c = ISLE[k].color;
+      const lx = r.round ? r.x + r.w / 2 : r.shape === 'bottom' && !tall ? r.x + r.w / 2 : r.x + 16, ly = r.round ? r.y + 22 : r.shape === 'bottom' && !tall ? r.y + r.h - 8 : r.y + 22;
+      return `<g class="isle isle-${k}" style="--ic:${c}">${islandShape(k)}<text x="${lx}" y="${ly}" ${r.round || (r.shape === 'bottom' && !tall) ? 'text-anchor="middle"' : ''}>${esc(ISLE[k].label)}${(k === 'main' || k === 'other') && !tall ? `<tspan class="rd">${esc(dayNote(k))}</tspan>` : ''}</text>${k === 'outstation' || (tall && (k === 'main' || k === 'other')) ? `<text class="rd2" x="${lx}" y="${ly + 17}">${esc(dayNote(k).replace(/^\s*·\s*/, ''))}</text>` : ''}</g>`; }).join('');
+    const linkSvg = links.map(l => {
+      const ty = App.TYPES[l.type] || App.TYPES.office, n = l.items.length, hi = isHigh(l), pc = App.pcolor(l.pid);
+      const arr = perNode[l.pid], k = arr.indexOf(l), w = Math.min(10, 3 + (step.kind === 'half' ? 0 : Math.log2(n) * 1.6));
+      const d = path(l, k, arr.length), on = selL && selL.key === l.key, dim = selL && !on;
+      return `<g class="lkg ${hi ? 'hi' : ''} ${on ? 'sel' : ''} ${dim ? 'dim' : ''}" data-link="${esc(l.key)}">${hi ? `<path class="lk-glow" d="${d}" style="stroke-width:${w + 9}"/>` : ''}
+        <path class="lk ${state.playing ? 'flow' : ''}" d="${d}" style="--c:${hi ? GOLD : pc};stroke-width:${hi ? w + 2 : w}"/><path class="lk-hit" d="${d}"/>
+        <title>${esc(App.pname(l.pid))} → ${esc(l.items[0].label)}${n > 1 ? ` (${n})` : ''} · ${esc(ty.label)}${hi ? ' · HIGH PRIORITY' : ''}</title></g>`; }).join('');
+    const nodeSvg = ns.map(n => {
+      const on = active.has(n.id), st = n.pid ? statusAt(step, n.pid) : '', isl = ISLE[n.region].color;
+      const rel = selL && (n.id === 'p:' + selL.pid || n.id === 'c:' + selL.node || n.id === 'n:' + selL.node);
+      if (n.pid) {
+        const mine = links.filter(l => l.pid === n.pid), now = mine.map(l => l.items[0].label);
+        const sub = st || (step.kind === 'month' ? `${mine.length} places` : now[0] || 'Free');
+        const pa = tall ? [n.r * .72, n.r * .72] : [n.r * .72, n.r * .72];
+        return `<g class="nd person ${on ? 'on' : ''} ${st ? 'quiet' : ''} ${rel ? 'rel' : ''}" data-node="${esc(n.id)}" transform="translate(${n.x},${n.y})" style="--pc:${n.color}">
+          <circle class="halo" r="${n.r + 7}"/><circle class="disc" r="${n.r}"/><text class="av-t" y="8">${esc(n.pid)}</text>
+          ${n.name !== n.pid ? `<text class="nm" y="${n.r + 19}" text-anchor="middle">${esc(short(n.name, 14))}</text>` : ''}<text class="sub" y="${n.name !== n.pid ? n.r + 35 : n.r + 20}" text-anchor="middle">${esc(short(sub, 24))}</text>
+          <g class="port" data-port="${esc(n.pid)}" transform="translate(${pa[0]},${pa[1]})"><circle r="${tall ? 12 : 10}"/><path d="M-4,0H4M0,-4V4"/><title>Drag from here onto a company to give ${esc(n.name)} work</title></g></g>`;
+      }
+      return `<g class="nd co ${on ? 'on' : ''} ${rel ? 'rel' : ''}" data-node="${esc(n.id)}" transform="translate(${n.x},${n.y})" style="--ic:${isl}">
+        <rect x="${-n.w / 2}" y="${-n.h / 2}" width="${n.w}" height="${n.h}" rx="${n.h / 2}"/><circle class="dot" cx="${-n.w / 2 + 15}" cy="0" r="5"/>
+        <text class="nm" x="${-n.w / 2 + 27}" y="5">${esc(short(n.name, tall ? 22 : 15))}</text><title>${esc(n.name)}</title></g>`;
+    }).join('');
+    svg.innerHTML = `<defs><filter id="lc-glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="4"/></filter></defs>
+      <g class="isles">${islands}</g><g class="links">${linkSvg}</g><g class="nodes">${nodeSvg}</g><path id="lc-rubber" class="rubber" d=""/>`;
     $('#lc-when', root).textContent = step.label;
     $('#lc-range', root).max = list.length - 1; $('#lc-range', root).value = state.idx;
-    const hol = step.date && App.data.gen.hol[step.date];
-    $('#lc-note', root).textContent = hol ? `Holiday: ${hol}` : !links.length ? (step.kind === 'half' ? 'Nobody is booked in this half hour.' : 'Nothing booked.') : `${links.length} link${links.length > 1 ? 's' : ''}`;
+    const hol = step.date && App.data.gen.hol[step.date], nHi = links.filter(isHigh).length;
+    $('#lc-note', root).textContent = hol ? `Holiday: ${hol}` : !links.length ? (step.kind === 'half' ? 'Nobody is booked in this half hour.' : 'Nothing booked.') : `${links.length} link${links.length > 1 ? 's' : ''}${nHi ? ` · ${nHi} high priority` : ''}`;
     panel(root, links, step);
     bindSvg(root, ns, byId, step);
     fit(root);
   }
   /* Wide layout: the whole chart fits in the window without scrolling; tall layout (phone): scrolls with the page */
   function fit(root) {
-    const svg = $('#lc-svg', root), pnl = $('#lc-panel', root); if (!svg) return;
-    if (L === LAYOUTS.tall) { svg.style.maxHeight = ''; if (pnl) pnl.style.maxHeight = ''; return; }
+    const svg = $('#lc-svg', root); if (!svg) return;
+    if (L === LAYOUTS.tall) { svg.style.maxHeight = ''; return; }
     const top = svg.getBoundingClientRect().top + window.scrollY;
-    const avail = Math.max(300, window.innerHeight - top - 16);
-    svg.style.maxHeight = avail + 'px'; if (pnl) pnl.style.maxHeight = (avail + 12) + 'px';
+    svg.style.maxHeight = Math.max(420, window.innerHeight - 20) + 'px';   // the whole chart fits once scrolled to it
   }
   let resizeT = null;
   window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { const r = document.querySelector('.lc'); if (r && App.route.view === 'chart') draw(document.getElementById('view')); }, 150); });
   function dayNote(group) { const d = Engine.windowDays(Store.plan, group); return d ? `  ·  days ${d.join(', ')}` : ''; }
 
-  /* ---------- side panel: the selected line ---------- */
+  /* ---------- floating panel: the selected line ---------- */
+  function setHigh(l, on) {
+    const items = l.items.filter(it => !App.isPast(it.date) && it.o.type !== 'meeting');
+    if (!items.length) { toast('This link is over; priority cannot be changed.'); return; }
+    App.keepScroll = true;
+    App.commit(on ? `High priority: ${App.pname(l.pid)} → ${items[0].label}` : `Normal priority: ${App.pname(l.pid)} → ${items[0].label}`, p => {
+      items.forEach(it => { const k = it.o.key + '|' + it.pid; if (on) p.importance[k] = 'high'; else { delete p.importance[k]; if (App.imp(it.o.key, it.pid) === 'high') p.importance[k] = 'normal'; } });
+    });
+  }
   function panel(root, links, step) {
     const box = $('#lc-panel', root), l = links.find(x => x.key === state.sel);
-    if (!l) { box.innerHTML = `<h3>How to use</h3><ol class="howto"><li><b>Move the time</b> with the bar or the arrows. Choose half hours, days or months.</li><li><b>Play</b> shows the work moving through the day.</li><li><b>Drag a box</b> to arrange the chart.</li><li><b>Drag from the dot</b> ● on an employee onto a company to give work at this time.</li><li><b>Click a line</b> to move it to another day, change its times, hand it over, remove it, or copy it to more days or hours.</li></ol>`; return; }
+    if (!l) { box.hidden = true; box.innerHTML = ''; return; }
+    box.hidden = false;
     const tgtName = OFFICE_NODES.find(n => n.id === l.node) ? OFFICE_NODES.find(n => n.id === l.node).name : App.cname(l.node);
-    box.innerHTML = `<h3>${App.avatar(l.pid, 'sm')} ${esc(App.pname(l.pid))} → ${esc(tgtName)}</h3>
-      <ul class="lc-items">${l.items.slice(0, 40).map((it, i) => `<li><div><b>${esc(D.nice(it.date))}</b> ${esc(Engine.partsText(it.e.parts))}<br><span class="muted small">${esc(it.label)}${it.o.extra ? ' · added by hand' : ''}</span></div>
-        ${App.isPast(it.date) ? '<span class="muted small">over</span>' : `<div class="lc-acts"><button type="button" class="btn ghost sm" data-chg="${i}" title="Move to another day, change the times or the people">Move / change…</button><button type="button" class="btn ghost sm" data-copy="${i}">Copy…</button><button type="button" class="btn ghost sm" data-hand="${i}">Hand over…</button><button type="button" class="btn ghost sm danger" data-rm="${i}">${it.o.extra ? 'Delete' : 'Not this day'}</button></div>`}</li>`).join('')}</ul>
-      ${l.items.length > 40 ? `<p class="muted small">and ${l.items.length - 40} more</p>` : ''}
-      <button type="button" class="btn ghost sm" id="lc-unsel">Close</button>`;
+    const hi = isHigh(l), canHi = l.items.some(it => !App.isPast(it.date) && it.o.type !== 'meeting');
+    box.innerHTML = `<div class="lp-h" style="--pc:${App.pcolor(l.pid)}">${App.avatar(l.pid, 'sm')}<div><b>${esc(App.pname(l.pid))} → ${esc(tgtName)}</b><small>${l.items.length} time${l.items.length > 1 ? 's' : ''} · ${esc((App.TYPES[l.type] || App.TYPES.office).label)}</small></div><button type="button" class="x" id="lc-unsel" aria-label="Close">${icon('x')}</button></div>
+      ${canHi ? `<button type="button" class="hi-btn ${hi ? 'on' : ''}" id="lc-hi">${hi ? '★ High priority (tap for normal)' : '☆ Make high priority'}</button>` : ''}
+      <ul class="lc-items">${l.items.slice(0, 40).map((it, i) => `<li><div><b>${esc(D.nice(it.date))}</b> ${esc(Engine.partsText(it.e.parts))}${App.imp(it.o.key, it.pid) === 'high' ? ' <b class="star">★</b>' : ''}<br><span class="muted small">${esc(it.label)}${it.o.extra ? ' · added by hand' : ''}</span></div>
+        ${App.isPast(it.date) ? '<span class="muted small">over</span>' : `<div class="lc-acts"><button type="button" class="btn ghost sm" data-chg="${i}" title="Move to another day, change the times or the people">Move / change</button><button type="button" class="btn ghost sm" data-copy="${i}">Copy</button><button type="button" class="btn ghost sm" data-hand="${i}">Hand over</button><button type="button" class="btn ghost sm danger" data-rm="${i}">${it.o.extra ? 'Delete' : 'Not this day'}</button></div>`}</li>`).join('')}</ul>
+      ${l.items.length > 40 ? `<p class="muted small">and ${l.items.length - 40} more</p>` : ''}`;
     $('#lc-unsel', box).onclick = () => { state.sel = null; draw(root); };
+    const hb = $('#lc-hi', box); if (hb) hb.onclick = () => setHigh(l, !hi);
     $$('[data-chg]', box).forEach(b => b.onclick = () => App.openOcc(l.items[+b.dataset.chg].o.key));
     $$('[data-copy]', box).forEach(b => b.onclick = () => copyDialog([l.items[+b.dataset.copy]], step));
     $$('[data-rm]', box).forEach(b => b.onclick = () => { const it = l.items[+b.dataset.rm]; removeItem(it); });
@@ -250,6 +324,7 @@
   function bindSvg(root, ns, byId, step) {
     const svg = $('#lc-svg', root);
     $$('[data-link]', svg).forEach(p => p.addEventListener('click', e => { e.stopPropagation(); state.sel = state.sel === p.dataset.link ? null : p.dataset.link; stop(root); draw(root); }));
+    svg.onclick = e => { if (!e.target.closest('[data-link]') && !e.target.closest('[data-node]') && state.sel) { state.sel = null; draw(root); } };
     svg.onpointerdown = e => {
       const port = e.target.closest('[data-port]'), g = e.target.closest('[data-node]');
       if (!port && !g) return;
@@ -263,16 +338,16 @@
       if (d.kind === 'move') {
         d.n.x = clampX(d.n, p.x - d.dx); d.n.y = clampY(d.n, p.y - d.dy); d.moved = true;
         d.g.setAttribute('transform', `translate(${d.n.x},${d.n.y})`);
-        $$('[data-link]', svg).forEach(path => path.style.opacity = '.25');
+        $$('[data-link]', svg).forEach(path => path.style.opacity = '.2');
       } else {
-        const a = d.from, sx = L === LAYOUTS.tall ? a.x : a.x + a.w / 2, sy = L === LAYOUTS.tall ? a.y + a.h / 2 : a.y; $('#lc-rubber', svg).setAttribute('d', `M${sx},${sy} L${p.x},${p.y}`);
+        const a = d.from, sx = a.x, sy = a.y; $('#lc-rubber', svg).setAttribute('d', `M${sx},${sy} L${p.x},${p.y}`);
         $$('.nd.co', svg).forEach(x => x.classList.remove('hover'));
         const over = document.elementFromPoint(e.clientX, e.clientY); const g = over && over.closest('.nd.co'); if (g) g.classList.add('hover');
       }
     };
     svg.onpointerup = e => {
       const d = state.drag; state.drag = null; if (!d) return;
-      if (d.kind === 'move') { if (d.moved) { const k = posKey(); Store.plan.chart[k] = Store.plan.chart[k] || {}; Store.plan.chart[k][d.n.id] = [Math.round(d.n.x), Math.round(d.n.y)]; Store.save(true); } draw(root); return; }
+      if (d.kind === 'move') { if (d.moved) { const k = posKey(); Store.plan.chart = Store.plan.chart || {}; Store.plan.chart[k] = Store.plan.chart[k] || {}; Store.plan.chart[k][d.n.id] = [Math.round(d.n.x), Math.round(d.n.y)]; Store.save(true); } draw(root); return; }
       $('#lc-rubber', svg).setAttribute('d', '');
       const over = document.elementFromPoint(e.clientX, e.clientY); const g = over && over.closest('[data-node]');
       if (!g || g.dataset.node.startsWith('p:')) { draw(root); return; }
@@ -292,23 +367,26 @@
 
   V.chart = {
     title: 'Link chart', editing: true,
-    desc: { what: 'Link chart: employees on the left and companies in their three groups on the right. Each line shows who works where at the time chosen on the time bar.',
+    desc: { what: 'Link chart: the team in the middle, companies around it in coloured islands. Each line shows who works where at the time chosen.',
       why: 'The one place to see and arrange who works where: give work by dragging, and click a line to move it to another day, change its times, hand it over, remove it or copy it.',
       edit: 'Changes made here are the same changes as in the Edit area; they show up on every page, in Excel and in the PDFs.' },
     render() {
+      const tip = (n, b, t) => `<li><span class="n">${n}</span><span><b>${b}</b> ${t}</span></li>`;
       return `<section class="lc"><h1 class="print-only">Link chart</h1>
+        <div class="lc-how noprint"><b>How to use</b><ol>
+          ${tip(1, 'Pick a time', 'or Play')}${tip(2, 'Colour', '= employee, <span class="gold-t">gold</span> = high priority')}${tip(3, 'Click a line:', 'priority, move, copy, hand over')}${tip(4, 'Drag ⊕', 'onto a company: new work; drag boxes to arrange')}</ol></div>
         <div class="lc-bar noprint">
           <div class="seg" role="group" aria-label="Time scale">${[['half', 'Half hour'], ['day', 'Day'], ['month', 'Month']].map(([k, l]) => `<button type="button" data-scale="${k}" class="${state.scale === k ? 'on' : ''}">${l}</button>`).join('')}</div>
           <button type="button" class="round" id="lc-prev" aria-label="Back">${icon('left')}</button>
           <input type="range" id="lc-range" min="0" value="0" aria-label="Time">
           <button type="button" class="round" id="lc-next" aria-label="Forward">${icon('right')}</button>
           <button type="button" class="btn primary" id="lc-play">${icon('play')}Play</button>
+          <span class="lc-when"><b id="lc-when"></b> <span class="muted small" id="lc-note"></span></span>
           <select id="lc-speed" aria-label="Speed"><option value="1200">Slow</option><option value="700" selected>Normal</option><option value="300">Fast</option></select>
           <span class="lc-more"><button type="button" class="btn ghost sm" id="lc-copyall" title="Copy everything shown now to more days or hours">${icon('copy')}<span>Copy moment</span></button><button type="button" class="btn ghost sm" id="lc-reset" title="Put the boxes back in their places">Reset</button><button type="button" class="btn ghost sm" data-print="chart" title="Print / save PDF">${icon('print')}</button></span>
         </div>
-        <div class="lc-when"><b id="lc-when"></b> <span class="muted small" id="lc-note"></span></div>
-        <div class="lc-grid"><div class="lc-canvas"><svg id="lc-svg" viewBox="0 0 1200 600" role="img" aria-label="Link chart of employees and companies"></svg></div><aside class="card lc-panel" id="lc-panel"></aside></div>
-        <ul class="key">${Object.keys(App.TYPES).filter(k => k !== 'review').map(k => `<li><span style="background:${App.TYPES[k].color}"></span>${App.TYPES[k].label}</li>`).join('')}</ul></section>`;
+        <div class="lc-canvas"><svg id="lc-svg" viewBox="0 0 1400 660" role="img" aria-label="Link chart of employees and companies"></svg><aside class="lc-panel" id="lc-panel" hidden></aside></div>
+        <ul class="key lc-key">${team().map(x => `<li><span class="kl" style="background:${x.color}"></span>${esc(x.name)}</li>`).join('')}<li><span class="kl gold"></span>High priority</li>${['main', 'outstation', 'other', 'office'].map(k => `<li><span class="ki" style="--ic:${ISLE[k].color}"></span>${ISLE[k].label}</li>`).join('')}</ul></section>`;
     },
     mount(root) {
       const sp = $('#lc-speed', root); sp.value = String(state.speed);
@@ -327,7 +405,7 @@
       $('#lc-next', root).onclick = () => { stop(root); state.idx = Math.min(steps().length - 1, state.idx + 1); draw(root); };
       $('#lc-play', root).onclick = () => { if (state.playing) stop(root); else play(root); };
       sp.onchange = () => { state.speed = +sp.value; if (state.playing) { clearInterval(state.timer); play(root); } };
-      $('#lc-reset', root).onclick = () => App.commit('Chart layout reset', p => { p.chart.pos = {}; p.chart.posTall = {}; });
+      $('#lc-reset', root).onclick = () => App.commit('Chart layout reset', p => { p.chart = p.chart || {}; p.chart.posR = {}; p.chart.posRT = {}; });
       $('#lc-copyall', root).onclick = () => {
         const step = steps()[state.idx]; if (step.kind === 'month') { toast('Choose the half hour or day scale to copy a moment.'); return; }
         const items = linksAt(step).flatMap(l => l.items.slice(0, 1)).filter(it => !App.isPast(it.date));

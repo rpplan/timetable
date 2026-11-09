@@ -1,4 +1,4 @@
-# Works timetable (version 9)
+# Works timetable (version 10)
 
 The office timetable from **B_planning_of_works.xlsx**: who measures which company, outstation trips, billing and advance days, meetings, targets and points.
 A plain static website (no build step) for GitHub Pages. **Only B can open it**: nothing is shown until B logs in.
@@ -15,11 +15,11 @@ The website files contain **no office data** (no names, companies or work). That
 | **Firebase** (after `setup/FIREBASE_SETUP.md`) | Cloud Firestore in your Firebase project, collection `timetable` | Only B's account (Firestore security rules). Same data on every device B uses. |
 | **Local** (until Firebase is connected) | This browser's storage, **encrypted** with B's password (AES-256, key from PBKDF2 with 310 000 rounds) | Nobody without the password. Only on this one browser; clearing site data deletes it, so save backups. |
 
-Only the light/dark choice is kept unencrypted. Backups (Edit → Excel & backup) are plain files: keep them safe.
+Only the light/dark choice is kept unencrypted. Backups (Settings → Excel & backup) are plain files: keep them safe.
 
 ## Security
 
-- Login first; the page shows nothing before it. Log-off after **10 minutes** without use (Edit → Login & saving), or when the window/tab is closed.
+- Login first; the page shows nothing before it. Log-off after **10 minutes** without use (Settings → Login & saving), or when the window/tab is closed.
 - Wrong passwords: Firebase blocks repeated tries; local mode waits longer after 5 wrong tries.
 - Strict Content-Security-Policy (only this site and Firebase may run scripts), no referrer, not indexed by search engines.
 - The share link and the public `data/plan.json` of earlier versions were removed, because they exposed the timetable without a password.
@@ -29,23 +29,22 @@ Only the light/dark choice is kept unencrypted. Backups (Edit → Excel & backup
 
 | Page | What it does |
 | --- | --- |
-| **Today** | The daily timetable, and the place where daily changes are made: each employee's work in Slot 1 and Slot 2 with High / Normal priority, clearance form, status and remark, 7-day target ticks, and a space to add a task. Below: meetings, billing ticks, 6 pm follow-ups and **B's daily check** (on leave, works completed today, sufficient / not sufficient, completed on time, timetable updated for tomorrow). |
-| Week | Everyone against the seven days of a week. Holidays and days without work are thin dark-grey columns; days off are dark grey. |
-| Month | Every day of the month for everyone; holidays and empty days are thin dark-grey rows. |
-| Employees | All employees side by side: points, companies, outstation days with companies, 7-day targets, and every day. Print one employee with the button above the name. |
-| Companies | The three groups, who measures each company and its site days; click a company for its monthly schedule. |
-| **Meetings** | All editable: name, time, dates of the month, move or delete a single meeting day, agenda with minutes and people. |
-| **Billing days** | All editable: time, company and tasks of every row, add or remove rows, done ticks, delete a whole day (asks to confirm). |
-| **Link chart** | See and arrange who works where and when; give work by dragging, move, change, hand over, remove or copy it. |
-| **B admin** | B's private hourly schedule (Saturday, Sunday, Monday morning), opened with B's pattern. |
-| Settings (button at the top) | Repeating work, who measures which company, employees, hours, holidays and site windows, points and records, Excel and backup, login. |
+| **Today** | The daily timetable and the place for daily changes: each employee's work with High / Normal priority, clearance form, pointwise notes, status and remark, and a space to add a task. Holidays, Sundays and days off show a dark-grey "Holiday" card with a **Works today** tick that switches the schedule on. Below: yesterday's action points, meetings, billing ticks, the **6 pm follow-up** (company engineers, discussion, action points for the next day) and B's daily check. |
+| **Month** | Every day of the month for everyone, in light colours per kind of work, company names in bold. Select any cells and **mark them for target completion** with a remark (positive = green and gives points, negative = orange); point at a cell to read the remark. Meeting commitments (◷, ✎ to edit) and action points (↳) in fine text. The **Week** tab shows one week. |
+| Employees | All employees side by side: points for target completion, companies, outstation days, and every day with notes, commitments and action points. |
+| **Companies** | The three groups, engineers and site days; upload the latest **billing Excel list** and search it in each company to see whether a work is already billed. Click a company for its monthly schedule with notes and 6 pm follow-ups. |
+| **Meetings** | Name, time, dates, move or delete a meeting day, agenda; **Commitments** tab (days each employee commits to for a task); **Follow-up points** tab (open action points of the meeting's companies). |
+| **Billing days** | Time, company and pointwise tasks with their own ticks on every row; add or remove rows; delete a whole day (asks to confirm). |
+| **Link chart** | The team in the middle, companies around it in coloured islands, one line colour per employee. Click a line to make it **high priority (gold)**, move, copy, hand over or remove it; drag ⊕ onto a company to give work. |
+| **B admin** | Opened with B's pattern: day schedule (weekday / weekend sections, Monday banking, officers meeting and goodwill visits, Tuesday site visit with agenda and hourly plan), one section over the next 10 days, work lists, **PPV Works** and **Architectural Works** monthly schedules. Its details are loaded once from `setup/update-nov-2026.json`. |
+| Settings (button at the top) | Repeating work, who measures which company, company engineers, employees, hours, holidays and site windows, points and records, Excel, backup and update file, login. |
 
 ## Rules built in
 
-- Meetings 9:15–10:30; work in Slot 1 (10:30–13:30) and Slot 2 (14:30–19:00).
-- **Site windows**: main contractors only on days 1–11 and 21–31, other contractors only on days 12–20, outstation only on the trip days (2–5 and 20–23). Exact days are set in Edit → Hours, holidays & site windows; work outside them is refused.
+- Timetable up to 31 December 2026. Meetings 9:15–10:30; work in Slot 1 (10:30–13:30) and Slot 2 (14:30–19:00).
+- **Site windows**: main contractors only on days 1–11 and 21–31, other contractors only on days 12–20, outstation only on the trip days (2–5 and 20–23). Exact days are set in Settings → Hours, holidays & site windows; work outside them is refused.
 - **C-1 and C-3**: each person does one main company for the whole run; the next run takes the next company. **C-2** (12–19): each person's other contractors one after the other in continuous blocks of days (for example one company on 12, 13, 14 Nov, then the next on 16, 17, 18, 19 Nov); the order is the order in Settings → Who measures which company, and starts one company further on each month.
-- P/P1 does no site work on billing and advance days; S does no site work on PPV, billing, estimation, bank visit and valuation days. Sunday is a day off for everyone; B also has Saturday off.
-- 7-day target per site measurement, 100 points per tick. Priority is High or Normal. Clearance form tick for every daily task of N, R, S, P/P1. On leave moves the day's work to the next working day.
-- Daily records of N, R, S, P/P1 are deleted after 45 days; B's records only when B deletes them.
+- P does no site work on billing and advance days; S does no site work on PPV, billing, estimation, bank visit and valuation days. Sunday is a day off for everyone; B also has Saturday off.
+- 100 points per positive mark in the monthly schedule. Priority is High or Normal. Clearance form tick for every daily task of N, R, S, P. On leave moves the day's work to the next working day.
+- Daily records of N, R, S, P are deleted after 45 days; B's records only when B deletes them.
 - Dark mode: the button at the top switches Auto / Light / Dark. Printing always uses light colours.

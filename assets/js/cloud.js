@@ -9,7 +9,7 @@
   'use strict';
   const V = '10.12.2';
   const URL = n => `https://www.gstatic.com/firebasejs/${V}/firebase-${n}.js`;
-  const REC = ['remarks', 'clear', 'importance', 'leave', 'targets', 'followups', 'status'];
+  const REC = ['remarks', 'clear', 'importance', 'leave', 'targets', 'followups', 'status', 'actions', 'workOn'];
   const clone = o => JSON.parse(JSON.stringify(o));
 
   const Cloud = {
@@ -88,8 +88,10 @@
     Object.keys(rv.days || {}).forEach(k => put('reviewDays', k, rv.days[k]));
     Object.keys(rv.pay || {}).forEach(k => put('reviewPay', k, rv.pay[k]));
     delete p.reviews;
-    out.private = JSON.stringify({ admin: p.admin || {}, bPin: p.settings.bPin || '' });
-    delete p.admin; p.settings.bPin = '';
+    out.private = JSON.stringify({ admin: p.admin || {}, badmin: p.badmin || {}, bPin: p.settings.bPin || '' });
+    delete p.admin; delete p.badmin; p.settings.bPin = '';
+    if (p.billList) out.bills = JSON.stringify(p.billList);   // the uploaded billing Excel list, in its own document
+    delete p.billList;
     delete p.savedAt;
     out.plan = JSON.stringify(p);
     Object.keys(rec).forEach(m => { out['rec-' + m] = JSON.stringify(rec[m]); });
@@ -98,7 +100,8 @@
   function assemble(docs) {
     const p = JSON.parse(docs.plan);
     const priv = docs.private ? JSON.parse(docs.private) : {};
-    p.admin = priv.admin || {}; p.settings = p.settings || {}; p.settings.bPin = priv.bPin || '';
+    p.admin = priv.admin || {}; p.badmin = priv.badmin || {}; p.settings = p.settings || {}; p.settings.bPin = priv.bPin || '';
+    p.billList = docs.bills ? JSON.parse(docs.bills) : null;
     REC.forEach(s => { p[s] = {}; }); p.reviews = { days: {}, pay: {} };
     Object.keys(docs).filter(k => k.startsWith('rec-')).forEach(k => {
       const r = JSON.parse(docs[k]);

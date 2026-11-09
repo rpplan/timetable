@@ -79,5 +79,53 @@
   function json(obj) { return new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }); }
   function csv(rows) { return new Blob(['\ufeff' + rows.map(r => r.map(v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\r\n')], { type: 'text/csv' }); }
 
-  g.IO = { xlsx, ics, download, json, csv, zip, crc32 };
+  /* ---------- reading an uploaded Excel (.xlsx) or CSV file: [{ name, rows: [[cell, ...]] }] ---------- */
+  async function readTable(file) {
+    const name = file.name || 'file';
+    if (/\.csv$/i.test(name)) {
+      const txt = await file.text(), rows = []; let row = [], cur = '', q = false;
+      for (let i = 0; i < txt.length; i++) { const ch = txt[i];
+        if (q) { if (ch === '"' && txt[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+        else if (ch === '"') q = true; else if (ch === ',') { row.push(cur); cur = ''; } else if (ch === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; } else if (ch !== '\r') cur += ch; }
+      if (cur || row.length) { row.push(cur); rows.push(row); }
+      return [{ name, rows: rows.filter(r => r.some(c => String(c).trim())) }];
+    }
+    const buf = new Uint8Array(await file.arrayBuffer()), dv = new DataView(buf.buffer), dec = new TextDecoder();
+    let e = buf.length - 22; while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+    if (e < 0) throw new Error('This is not an Excel (.xlsx) file.');
+    const n = dv.getUint16(e + 10, true); let p = dv.getUint32(e + 16, true); const files = {};
+    for (let i = 0; i < n; i++) {
+      const comp = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), el = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+      files[dec.decode(buf.subarray(p + 46, p + 46 + nl))] = { comp, size, off }; p += 46 + nl + el + cl;
+    }
+    const get = async f => { const x = files[f]; if (!x) return null; const nl = dv.getUint16(x.off + 26, true), el = dv.getUint16(x.off + 28, true), st = x.off + 30 + nl + el, data = buf.subarray(st, st + x.size);
+      if (x.comp === 0) return dec.decode(data);
+      return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text(); };
+    const xml = s => new DOMParser().parseFromString(s, 'application/xml');
+    const ss = []; const sst = await get('xl/sharedStrings.xml');
+    if (sst) Array.from(xml(sst).getElementsByTagName('si')).forEach(si => ss.push(Array.from(si.getElementsByTagName('t')).map(t => t.textContent).join('')));
+    const wb = xml(await get('xl/workbook.xml') || '<w/>'), rels = xml(await get('xl/_rels/workbook.xml.rels') || '<r/>');
+    const target = {}; Array.from(rels.getElementsByTagName('Relationship')).forEach(r => { target[r.getAttribute('Id')] = r.getAttribute('Target'); });
+    const out = [];
+    for (const sh of Array.from(wb.getElementsByTagName('sheet'))) {
+      const rid = sh.getAttribute('r:id') || sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+      let t = target[rid] || ''; t = t.replace(/^\//, ''); if (!t.startsWith('xl/')) t = 'xl/' + t;
+      const src = await get(t); if (!src) continue;
+      const rows = [];
+      Array.from(xml(src).getElementsByTagName('row')).slice(0, 5000).forEach(r => {
+        const vals = [];
+        Array.from(r.getElementsByTagName('c')).forEach(c => {
+          const ref = c.getAttribute('r') || '', col = ref.replace(/[0-9]/g, '').split('').reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+          const ty = c.getAttribute('t'), v = c.getElementsByTagName('v')[0];
+          let val = ty === 's' ? ss[+((v || {}).textContent)] : ty === 'inlineStr' ? Array.from(c.getElementsByTagName('t')).map(x => x.textContent).join('') : v ? v.textContent : '';
+          vals[col >= 0 ? col : vals.length] = val == null ? '' : String(val);
+        });
+        const row = Array.from(vals, x => x || ''); if (row.some(x => x.trim())) rows.push(row);
+      });
+      out.push({ name: sh.getAttribute('name') || t, rows });
+    }
+    return out;
+  }
+
+  g.IO = { xlsx, ics, download, json, csv, zip, crc32, readTable };
 })(window);
