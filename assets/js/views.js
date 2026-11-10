@@ -49,14 +49,19 @@
   }
   /* small lines shown under a person's day: commitments from meetings, action points from yesterday's follow-up */
   function fineLines(pid, d, edit) {
-    const cm = App.commitsFor(pid, d).map(c => `<div class="fine cm">◷ ${esc(c.task || 'Commitment')} · ${c.days} day${c.days === 1 ? '' : 's'}, due ${short(c.due)}</div>`);
+    const cm = App.commitsFor(pid, d).map(c => `<div class="fine cm">◷ ${esc(c.task || 'Commitment')} · ${c.days === 0 ? 'same day' : `${c.days} day${c.days === 1 ? '' : 's'}, due ${short(c.due)}`}</div>`);
     const ac = App.actionsFor(d).filter(a => App.companyOwners(a.company.id).includes(pid)).map(a => `<div class="fine ac">↳ <b>${esc(a.company.name)}</b>: ${a.items.map(x => `${x.done ? '✓ ' : ''}${esc(x.t)}`).join('; ')}</div>`);
     const ed = edit && cm.length ? `<button type="button" class="ced noprint" data-cedit="${esc(pid)}|${d}" title="Edit commitments">✎ edit</button>` : '';
     return cm.join('') + ed + ac.join('');
   }
+  /* Meetings: one agenda per meeting day (copied from the repeating meeting the first time it is changed) */
+  const meetRec = key => (Store.plan.meetDays || {})[key] || {};
+  function meetAgenda(o) { const r = meetRec(o.key); if (Array.isArray(r.agenda)) return r.agenda; const t = App.task(o.taskId); return (t && t.agenda) || []; }
+  const meetTitle = o => meetRec(o.key).title || o.title;
+  const meetings = () => App.data.gen.occs.filter(o => o.type === 'meeting').sort((a, b) => a.date === b.date ? T.m(a.start) - T.m(b.start) : (a.date < b.date ? -1 : 1));
   const typeStyle = o => { const ty = App.TYPES[o.type] || App.TYPES.office; return `--c:${ty.color}`; };
   function line(e, pid) {
-    return `<div class="mline" style="${typeStyle(e.o)}"><span class="tm">${esc(entryText(e))}</span> ${App.labelHtml(e.o, pid)}${App.imp(e.o.key, pid) === 'high' ? ' <b class="star" title="High priority">★</b>' : ''}${Store.plan.clear[e.key + '|' + pid] ? ' <span class="clr-mini" title="Clearance form done">✓CF</span>' : ''}${App.notesHtml(e.o)}</div>`;
+    return `<div class="mline ${e.o.type === 'meeting' && meetRec(e.o.key).cancelled ? 'm-cancel' : ''}" style="${typeStyle(e.o)}" ${e.o.type === 'meeting' && meetRec(e.o.key).cancelled ? 'title="Meeting cancelled"' : ''}><span class="tm">${esc(entryText(e))}</span> ${App.labelHtml(e.o, pid)}${App.imp(e.o.key, pid) === 'high' ? ' <b class="star" title="High priority">★</b>' : ''}${Store.plan.clear[e.key + '|' + pid] ? ' <span class="clr-mini" title="Clearance form done">✓CF</span>' : ''}${App.notesHtml(e.o)}</div>`;
   }
 
   /* Billing / advance day rows (B may have changed times, companies or tasks) */
@@ -79,13 +84,11 @@
       const plan = Store.plan, data = App.data, date = validDate(p), dt = D.parse(date);
       const hol = data.gen.hol[date], past = App.isPast(date);
       const clashes = data.iss.filter(i => i.level === 'clash' && i.date === date && i.person !== 'B');
-      const meetings = (data.byDate[date] || []).filter(o => o.type === 'meeting');
+      const meetsToday = (data.byDate[date] || []).filter(o => o.type === 'meeting');
       const pays = (data.byDate[date] || []).filter(o => o.type === 'advance' || o.type === 'billing');
-      const meet = meetings.map(m => {
-        const t = App.task(m.taskId) || {}; let cur = T.m(m.start);
-        return `<article class="card ${past ? 'past' : ''}"><h2>${esc(m.title)} <a class="small noprint" href="#/meetings">change</a></h2><p class="muted">${m.start}–${m.end}. Attending: ${m.people.map(x => esc(App.pname(x))).join(', ') || 'nobody'}${m.away && m.away.length ? `. Out of station: ${m.away.map(x => esc(App.pname(x))).join(', ')}` : ''}</p>
-          <ol class="agenda">${(t.agenda || []).map(a => { const s = T.s(cur); cur += Number(a.minutes) || 0; return `<li><span class="tm">${s}</span><span>${esc(a.item)}</span><span class="avs">${(a.owners || []).map(o => App.avatar(o, 'sm')).join('')}</span></li>`; }).join('')}</ol></article>`;
-      }).join('');
+      const dotT = t => t.replace(/^0/, '').replace(':', '.');
+      const meet = meetsToday.map(m => { const c = meetRec(m.key).cancelled, nm = meetTitle(m).replace(/^joint (meet|meeting)\s*:?\s*/i, '');
+        return `<a class="meet-line ${c ? 'cancelled' : ''}" href="#/meetings?occ=${encodeURIComponent(m.key)}">${date === D.today() ? 'TODAY' : esc(D.nice(date).toUpperCase())} JOINT MEETING ${dotT(m.start)} TO ${dotT(m.end)}${c ? ' · CANCELLED' : ''}${nm ? ` <small>${esc(nm)}</small>` : ''}</a>`; }).join('');
       const payCards = pays.map(o => { const rows = payRows(o), checks = plan.reviews.pay || {};
         return `<article class="card" style="${typeStyle(o)}"><h2>${esc(o.title)} <span class="count">${rows.filter(r => checks[o.key + '|' + r.company]).length} of ${rows.length} done</span> <a class="small noprint" href="#/billing">change times and tasks</a></h2>
           <div class="chipset">${rows.map(r => { const k = o.key + '|' + r.company; return `<label class="tchip ${checks[k] ? 'on' : ''}"><input type="checkbox" data-pay="${esc(k)}" ${checks[k] ? 'checked' : ''}><span>${esc(r.company === 'general' ? 'All works' : App.cname(r.company))}</span><small>${esc(r.text)}</small></label>`; }).join('')}</div></article>`; }).join('');
@@ -98,12 +101,12 @@
         ${hol ? `<p class="banner off-banner">Holiday: ${esc(hol)}</p>` : D.dow(date) === 0 ? '<p class="banner off-banner">Sunday: a day off for everyone</p>' : ''}
         ${past ? '<p class="banner past-b">This day is over. The timetable is closed; the status, remarks and B\'s daily check can still be filled in.</p>' : ''}
         ${clashes.map(c => `<p class="banner warn">${esc(c.text)}</p>`).join('')}
+        ${meet}
         ${acts.length ? `<article class="card acts-card"><h2>Action points from the 6 pm follow-up of ${esc(D.nice(acts[0].from))}</h2>${acts.map(a => `<div class="act-co"><b>${esc(a.company.name)}</b><ul>${a.items.map((x, i) => `<li><label class="check"><input type="checkbox" data-actdone="${esc(a.key)}|${Store.plan.actions[a.key].indexOf(x)}" ${x.done ? 'checked' : ''}><span class="${x.done ? 'struck' : ''}">${esc(x.t)}</span></label></li>`).join('')}</ul></div>`).join('')}</article>` : ''}
         <div class="people-grid">${App.staff().map(x => personCard(x, date, past)).join('')}</div>
-        ${meet ? `<div class="grid2">${meet}</div>` : ''}
         ${payCards}
         ${followCard(date, past)}
-        ${!hol && D.dow(date) !== 0 ? checkCard(date, past) : ''}
+        ${!hol && D.dow(date) !== 0 ? `<label class="check dc-tom noprint"><input type="checkbox" data-dctom ${(((plan.reviews.days || {})[date]) || {}).tomorrow ? 'checked' : ''}> Timetable updated for tomorrow</label>` : ''}
       </section>`;
     },
     mount(root, p) {
@@ -132,7 +135,7 @@
   function autoGrow(t) { const grow = () => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }; grow(); t.addEventListener('input', grow); }
 
   function personCard(x, date, past) {
-    const pid = x.id, list = workOf(pid, date);
+    const pid = x.id, list = workOf(pid, date).filter(e => e.o.type !== 'meeting');
     const w = App.whereLabel(date, pid), leave = App.onLeave(pid, date), rest = restOf(pid, date), chose = workOnDay(pid, date);
     const restDay = App.data.gen.hol[date] || D.dow(date) === 0 || Engine.personOff(Store.plan, pid, date);
     const trip = App.outstationRuns(pid).find(r => r.days.includes(date));
@@ -157,11 +160,16 @@
     }
     const fine = rest || leave ? '' : fineLines(pid, date, false);
     const canAdd = !past && !rest && !leave;
+    const ok = ((((Store.plan.reviews.days || {})[date] || {}).emp || {})[pid] || {}).ok;
+    const restDay2 = rest && !chose;
+    const leaveTick = !restDay2 && !expired(date, pid) ? `<label class="tchip sm leave-t ${leave ? 'on' : ''}"><input type="checkbox" data-dcleave="${esc(pid)}" ${leave ? 'checked' : ''} ${past ? 'disabled' : ''}><span>On leave</span></label>` : '';
+    const suff = !rest && !leave && date <= D.today() && !expired(date, pid) ? `<div class="suff"><span class="small muted">Works completed today:</span><label class="tchip sm ${ok === 'yes' ? 'on' : ''}"><input type="checkbox" data-dcok="${esc(pid)}|yes" ${ok === 'yes' ? 'checked' : ''}><span>Sufficient</span></label><label class="tchip sm bad ${ok === 'no' ? 'on' : ''}"><input type="checkbox" data-dcok="${esc(pid)}|no" ${ok === 'no' ? 'checked' : ''}><span>Not sufficient</span></label></div>` : '';
     return `<article class="card person tcard ${past ? 'past' : ''} ${rest ? 'resting' : ''}" style="--pc:${x.color}">
       <header>${App.avatar(pid, 'lg')}<div><a href="#/employees" class="name">${esc(x.name)}</a>${rest ? '' : `<span class="where w-${w.k}">${esc(w.text)}</span>`}</div>
-        <span class="hd-chips">${workSwitch}${trip && !past && !rest ? `<label class="tchip sm ${trip.going ? 'on' : ''}" title="Goes on the outstation trip ${esc(listDates(trip.days))}"><input type="checkbox" data-trip="${esc(trip.runKey)}|${esc(pid)}" ${trip.going ? 'checked' : ''}><span>Outstation</span></label>` : ''}</span></header>
+        <span class="hd-chips">${workSwitch}${leaveTick}${trip && !past && !rest ? `<label class="tchip sm ${trip.going ? 'on' : ''}" title="Goes on the outstation trip ${esc(listDates(trip.days))}"><input type="checkbox" data-trip="${esc(trip.runKey)}|${esc(pid)}" ${trip.going ? 'checked' : ''}><span>Outstation</span></label>` : ''}</span></header>
       ${body}
       ${fine ? `<div class="fines">${fine}</div>` : ''}
+      ${suff}
       ${canAdd ? `<form class="addtask noprint" data-addtask="${esc(pid)}"><input name="t" placeholder="New task for ${esc(x.name)}" aria-label="New task" required>
         <select name="w" aria-label="When">${slots.map((s, i) => `<option value="${i}">Slot ${i + 1}</option>`).join('')}<option value="day">Whole day</option></select>
         <label class="tchip sm hp-pick"><input type="checkbox" name="hp"><span>★ High</span></label><button class="btn ghost sm" type="submit">${icon('plus')}Add</button></form>` : ''}
@@ -178,10 +186,9 @@
     if (!cos.length) return '';
     return `<article class="card"><h2>6 pm follow-up</h2><div class="fu-cos">${cos.map(c => { const k = c.id + '|' + date, acts = Store.plan.actions[k] || [];
       return `<div class="fu-co"><div class="fu-h"><b>${esc(c.name)}</b><span class="engs">${engHtml(c)}</span></div>
-        <label class="fu-l">Discussion<textarea data-fu="${esc(k)}" rows="1" placeholder="What was discussed">${esc(Store.plan.followups[k] || '')}</textarea></label>
         <div class="fu-l">Action points for the next day<ul class="act-ed">${acts.map((a, i) => `<li><input data-act="${esc(k)}|${i}" value="${esc(a.t)}" placeholder="Action point"><button type="button" class="x" data-actrm="${esc(k)}|${i}" aria-label="Remove">${icon('x')}</button></li>`).join('')}</ul>
           <button type="button" class="add-small" data-actadd="${esc(k)}">${icon('plus')}Add action point</button></div></div>`; }).join('')}</div>
-      <p class="muted small">Action points appear the next working day on Today, in the monthly schedule, on the Employees page, and in the next meeting of that company.</p></article>`;
+      <p class="muted small">Action points appear the next working day on Today, in the monthly schedule, on the Employees page, in the next meeting and on the company's schedule.</p></article>`;
   }
   function bindFollow(root) {
     $$('[data-fu]', root).forEach(t => { autoGrow(t); t.onchange = () => { const k = t.dataset.fu; if (t.value.trim()) Store.plan.followups[k] = t.value; else delete Store.plan.followups[k]; Store.save(true); toast('Follow-up saved.'); }; });
@@ -193,64 +200,29 @@
   }
   const splitLast = s => { const i = s.lastIndexOf('|'); return [s.slice(0, i), s.slice(i + 1)]; };
 
-  function checkCard(date, past) {
-    const plan = Store.plan, d = ((plan.reviews.days || {})[date]) || {}, e = d.emp || {};
-    const ppl = App.staff();
-    const filled = ppl.filter(x => (e[x.id] || {}).works || (e[x.id] || {}).ok).length;
-    return `<article class="card review"><h2>B's daily check <span class="count">${filled} of ${ppl.length} filled</span></h2>
-      <div class="dc">${ppl.map(x => { const r = e[x.id] || {}, lv = App.onLeave(x.id, date);
-        return `<div class="dc-row" style="--pc:${x.color}"><div class="dc-who">${App.avatar(x.id, 'sm')}<b>${esc(x.name)}</b>
-            <label class="check small"><input type="checkbox" data-dcleave="${esc(x.id)}" ${lv ? 'checked' : ''} ${past ? 'disabled' : ''}> On leave</label></div>
-          <textarea data-dcw="${esc(x.id)}" rows="1" placeholder="Works completed today by ${esc(x.name)}" ${lv ? 'disabled' : ''}>${esc(r.works || '')}</textarea>
-          <div class="dc-ticks"><label class="tchip sm ${r.ok === 'yes' ? 'on' : ''}"><input type="checkbox" data-dcok="${esc(x.id)}|yes" ${r.ok === 'yes' ? 'checked' : ''}><span>Sufficient</span></label>
-            <label class="tchip sm bad ${r.ok === 'no' ? 'on' : ''}"><input type="checkbox" data-dcok="${esc(x.id)}|no" ${r.ok === 'no' ? 'checked' : ''}><span>Not sufficient</span></label>
-            <label class="tchip sm ${r.timely ? 'on' : ''}"><input type="checkbox" data-dct="${esc(x.id)}" ${r.timely ? 'checked' : ''}><span>Tasks completed on time</span></label></div></div>`; }).join('')}</div>
-      <label class="check dc-tom"><input type="checkbox" data-dctom ${d.tomorrow ? 'checked' : ''}> Timetable updated for tomorrow</label></article>`;
-  }
-
   /* ---------------- Month (with a Week tab), marks for target completion ---------------- */
   const mk = { mode: false, sel: new Set() };
   const marksOf = (pid, d) => (Store.plan.marks || []).filter(m => m.cells.some(c => c.pid === pid && c.date === d));
   function cellCls(pid, d) { const ms = marksOf(pid, d); if (!ms.length) return ''; return ms[ms.length - 1].tone === 'neg' ? 'mk-neg' : 'mk-pos'; }
   const cellTip = (pid, d) => marksOf(pid, d).map(m => `${m.tone === 'neg' ? '✗' : '✓'} ${m.text}`).join('\n');
   function cellsText(cells) { const by = {}; cells.forEach(c => { (by[c.pid] = by[c.pid] || []).push(c.date); }); return Object.keys(by).map(pid => `${App.pname(pid)}: ${listDates(by[pid])}`).join(' · '); }
-  function weekHtml(p) {
-    const plan = Store.plan, st = plan.settings, data = App.data, staff = App.staff();
-    const ws = D.weekStart(p.w || validDate(p)), days = D.range(ws, D.add(ws, 6)), kinds = days.map(dayKind);
-    const prev = D.add(ws, -7), next = D.add(ws, 7), nThin = kinds.filter(k => k.thin).length;
-    const cols = `<colgroup><col class="c-name">${kinds.map(k => `<col class="${k.thin ? 'c-thin' : ''}">`).join('')}</colgroup>`;
-    const head = days.map((d, i) => kinds[i].thin ? `<th class="thin" title="${esc(D.nice(d) + ': ' + kinds[i].label)}"><span class="vlabel">${D.DAYS[D.dow(d)].slice(0, 3)} ${D.day(d)} · ${esc(kinds[i].label)}</span></th>`
-      : `<th class="${d === D.today() ? 'now' : ''} ${App.isPast(d) ? 'past' : ''}"><a href="#/today?date=${d}">${D.DAYS[D.dow(d)].slice(0, 3)} <b>${D.day(d)}</b> ${D.MONTHS[D.parse(d).getUTCMonth()].slice(0, 3)}</a></th>`).join('');
-    const rows = staff.map(x => `<tr><th class="rowhead">${App.who(x.id)}</th>${days.map((d, i) => {
-      if (kinds[i].thin) return '<td class="thin"></td>';
-      const rest = restOf(x.id, d); if (rest) return `<td class="off"><span>${esc(rest.replace(/^Holiday: /, ''))}</span></td>`;
-      if (App.onLeave(x.id, d)) return '<td class="off leave"><span>On leave</span></td>';
-      return `<td class="${App.isPast(d) ? 'past' : ''} ${data.clashPD.has(x.id + '|' + d) ? 'clash' : ''}">${workOf(x.id, d).map(e => line(e, x.id)).join('')}${fineLines(x.id, d, false)}</td>`;
-    }).join('')}</tr>`).join('');
-    const list = days.map((d, i) => kinds[i].thin ? `<div class="wl-thin">${esc(D.nice(d))} · ${esc(kinds[i].label)}</div>`
-      : `<article class="card wl-day ${App.isPast(d) ? 'past' : ''}"><h3><a href="#/today?date=${d}">${esc(D.nice(d, { long: true }))}</a></h3>${staff.map(x => {
-        const rest = restOf(x.id, d); const what = rest ? `<span class="offbar">${esc(rest)}</span>` : App.onLeave(x.id, d) ? '<span class="offbar">On leave</span>' : workOf(x.id, d).map(e => line(e, x.id)).join('') || '<span class="offday">Free</span>';
-        return `<div class="wl-row">${App.avatar(x.id, 'sm')}<div class="wl-what">${what}</div></div>`; }).join('')}</article>`).join('');
-    return `<header class="head"><h2 class="h1">Week: ${listDates(days)} ${ws.slice(0, 4)}</h2>
-        <div class="acts"><div class="nav-date noprint"><a class="round ${prev < D.weekStart(st.start) ? 'off' : ''}" href="${link('month', { view: 'week', w: prev })}" aria-label="Previous week">${icon('left')}</a>
-        <a class="btn ghost" href="${link('month', { view: 'week', w: D.weekStart(App.defaultDate()) })}">This week</a>
-        <a class="round ${next > st.end ? 'off' : ''}" href="${link('month', { view: 'week', w: next })}" aria-label="Next week">${icon('right')}</a></div>${printBtn('week')}</div></header>
-      <div class="scroll week-table"><table class="week" style="min-width:${120 + (7 - nThin) * 140 + nThin * 40}px">${cols}<thead><tr><th></th>${head}</tr></thead><tbody>${rows}</tbody></table></div>
-      <div class="week-list">${list}</div>`;
-  }
   V.month = {
     title: 'Month', editing: true,
-    desc: { what: 'Month: the monthly schedule, one row for every day (or the Week tab).',
-      why: 'Select any cells and mark them for target completion with a remark: positive remarks turn the cells green and give points, negative remarks turn them orange. Point at a marked cell to read the remark. ◷ lines are commitments from meetings (✎ to edit), ↳ lines are action points from the 6 pm follow-up.' },
+    desc: { what: 'Month: the monthly schedule, one row for every day (or the Week tab, in the same layout).',
+      why: 'Select any cells and mark them for target completion with a remark: positive remarks turn the cells green and give points, negative remarks turn them orange. Point at a marked cell to read the remark. ◷ lines are commitments from meetings (✎ to edit), ↳ lines are action points from the 6 pm follow-up. "+ Meeting" under a date adds a meeting on that day.' },
     render(p) {
-      const plan = Store.plan, data = App.data, m = pickMonth(p), staff = App.staff();
-      const tabs = `<nav class="tabs plain noprint view-tabs"><a href="${link('month', { m })}" class="${p.view !== 'week' ? 'on' : ''}">Month</a><a href="${link('month', { view: 'week', w: D.weekStart(App.defaultDate()) })}" class="${p.view === 'week' ? 'on' : ''}">Week</a></nav>`;
-      if (p.view === 'week') return `<section>${tabs}${weekHtml(p)}${legend()}</section>`;
-      const dates = data.gen.dates.filter(d => D.month(d) === m);
+      const plan = Store.plan, data = App.data, st = plan.settings, staff = App.staff(), week = p.view === 'week';
+      const m = pickMonth(p), ws = D.weekStart(p.w || App.defaultDate());
+      const dates = week ? D.range(ws, D.add(ws, 6)) : data.gen.dates.filter(d => D.month(d) === m);
+      const tabs = `<nav class="tabs plain noprint view-tabs"><a href="${link('month', { m })}" class="${!week ? 'on' : ''}">Month</a><a href="${link('month', { view: 'week', w: D.weekStart(App.defaultDate()) })}" class="${week ? 'on' : ''}">Week</a></nav>`;
+      const meetOn = d => (data.byDate[d] || []).filter(o => o.type === 'meeting');
+      const meetBtn = d => { if (App.isPast(d) || d < st.start || d > st.end) return ''; const ms = meetOn(d);
+        return ms.length ? ms.map(o => `<a class="mt-chip noprint ${meetRec(o.key).cancelled ? 'cancelled' : ''}" href="#/meetings?occ=${encodeURIComponent(o.key)}" title="${esc(meetTitle(o))}">◉ Meeting</a>`).join('') : `<button type="button" class="mt-add noprint" data-newmeet="${d}" title="Add a meeting on this day">+ Meeting</button>`; };
       const rows = dates.map(d => {
         const k = dayKind(d), past = App.isPast(d);
-        if (k.thin) return `<tr class="thin"><th class="rowhead">${D.day(d)} ${D.DAYS[D.dow(d)].slice(0, 3)}</th><td colspan="${staff.length}">${esc(k.label)}</td></tr>`;
-        return `<tr class="${past ? 'past' : ''}"><th class="rowhead"><a href="#/today?date=${d}"><b>${D.day(d)}</b> ${D.DAYS[D.dow(d)].slice(0, 3)}</a></th>${staff.map(x => {
+        const head = `<th class="rowhead"><a href="#/today?date=${d}"><b>${D.day(d)}</b> ${D.DAYS[D.dow(d)].slice(0, 3)}${week ? ' ' + D.MONTHS[D.parse(d).getUTCMonth()].slice(0, 3) : ''}</a>${k.thin && (App.data.gen.hol[d] || D.dow(d) === 0) ? '' : meetBtn(d)}</th>`;
+        if (k.thin) return `<tr class="thin"><th class="rowhead">${D.day(d)} ${D.DAYS[D.dow(d)].slice(0, 3)}${App.data.gen.hol[d] || D.dow(d) === 0 ? '' : meetBtn(d)}</th><td colspan="${staff.length}">${esc(k.label)}</td></tr>`;
+        return `<tr class="${past ? 'past' : ''}">${head}${staff.map(x => {
           const ck = x.id + '|' + d, sel = mk.sel.has(ck) ? 'sel' : '', tip = cellTip(x.id, d);
           const rest = restOf(x.id, d);
           if (rest) return `<td class="off" data-cell="${ck}"><span>${esc(rest.replace(/^Holiday: /, ''))}</span></td>`;
@@ -259,14 +231,19 @@
           return `<td class="mc ${cellCls(x.id, d)} ${sel}" data-cell="${ck}" ${tip ? `title="${esc(tip)}"` : ''}>${list.map(e => line(e, x.id)).join('') || '<span class="offday">Free</span>'}${fineLines(x.id, d, true)}${tip ? `<div class="mk-note noprint">${esc(marksOf(x.id, d).slice(-1)[0].text)}</div>` : ''}</td>`;
         }).join('')}</tr>`;
       }).join('');
-      const marks = (plan.marks || []).filter(mm => mm.cells.some(c => D.month(c.date) === m));
-      return `<section>${tabs}<header class="head"><h1>Monthly schedule: ${monthName(m)}</h1>${printBtn('month')}</header>
-        ${monthTabs('month', m)}
+      const ds = new Set(dates), marks = (plan.marks || []).filter(mm => mm.cells.some(c => ds.has(c.date)));
+      const prev = D.add(ws, -7), next = D.add(ws, 7);
+      const top = week ? `<header class="head"><h1>Week: ${listDates(dates)} ${ws.slice(0, 4)}</h1>
+          <div class="acts"><div class="nav-date noprint"><a class="round ${prev < D.weekStart(st.start) ? 'off' : ''}" href="${link('month', { view: 'week', w: prev })}" aria-label="Previous week">${icon('left')}</a>
+          <a class="btn ghost" href="${link('month', { view: 'week', w: D.weekStart(App.defaultDate()) })}">This week</a>
+          <a class="round ${next > st.end ? 'off' : ''}" href="${link('month', { view: 'week', w: next })}" aria-label="Next week">${icon('right')}</a></div>${printBtn('month')}</div></header>`
+        : `<header class="head"><h1>Monthly schedule: ${monthName(m)}</h1>${printBtn('month')}</header>${monthTabs('month', m)}`;
+      return `<section>${tabs}${top}
         <div class="mk-bar noprint ${mk.mode ? 'on' : ''}"><button type="button" class="btn ${mk.mode ? 'primary' : 'ghost'} sm" id="mk-mode">${mk.mode ? '✓ Selecting cells: click cells to select' : 'Select cells to mark for target completion'}</button>
           ${mk.mode ? `<span class="count">${mk.sel.size} selected</span><button type="button" class="btn primary sm" id="mk-go" ${mk.sel.size ? '' : 'disabled'}>Mark selected…</button><button type="button" class="btn ghost sm" id="mk-clear">Clear</button>` : ''}</div>
         <div class="scroll"><table class="week month ${mk.mode ? 'selecting' : ''}" id="mt"><thead><tr><th>Date</th>${staff.map(x => `<th>${App.who(x.id)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
         ${legend()}
-        ${marks.length ? `<article class="card"><h2>Marks this month</h2><ul class="mk-list">${marks.map(mm => `<li class="${mm.tone === 'neg' ? 'neg' : 'pos'}"><span class="mk-tone">${mm.tone === 'neg' ? 'Negative' : 'Positive'}</span><span><b>${esc(mm.text)}</b><small>${esc(cellsText(mm.cells))}</small></span><button type="button" class="btn ghost sm" data-mkedit="${esc(mm.id)}">Edit</button></li>`).join('')}</ul></article>` : ''}
+        ${marks.length ? `<article class="card"><h2>Marks ${week ? 'this week' : 'this month'}</h2><ul class="mk-list">${marks.map(mm => `<li class="${mm.tone === 'neg' ? 'neg' : 'pos'}"><span class="mk-tone">${mm.tone === 'neg' ? 'Negative' : 'Positive'}</span><span><b>${esc(mm.text)}</b><small>${esc(cellsText(mm.cells))}</small></span><button type="button" class="btn ghost sm" data-mkedit="${esc(mm.id)}">Edit</button></li>`).join('')}</ul></article>` : ''}
       </section>`;
     },
     mount(root, p) {
@@ -282,8 +259,16 @@
         const ms = marksOf(pid, date); if (ms.length) markDialog(ms[ms.length - 1]);
       });
       $$('[data-mkedit]', root).forEach(x => x.onclick = () => markDialog((Store.plan.marks || []).find(mm => mm.id === x.dataset.mkedit)));
+      $$('[data-newmeet]', root).forEach(x => x.onclick = e => { e.stopPropagation(); newMeeting(x.dataset.newmeet); });
     }
   };
+  /* A new meeting on a day: same time slot as the repeating meetings; the details are filled in on the Meetings page */
+  function newMeeting(d) {
+    const t = Store.plan.tasks.find(x => x.type === 'meeting') || { start: '09:15', end: '10:30' };
+    const id = 'm' + Date.now().toString(36);
+    App.commit(`New meeting on ${D.nice(d)}`, p => { p.extra.push({ id, title: 'Joint meeting', date: d, start: t.start, end: t.end, type: 'meeting', people: p.people.map(x => x.id), companies: [], details: 'Added from the monthly schedule.' }); (p.meetDays = p.meetDays || {})['x:' + id] = { agenda: [] }; });
+    location.hash = '#/meetings?occ=' + encodeURIComponent('x:' + id);
+  }
   const legend = () => `<ul class="key">${Object.keys(App.TYPES).filter(k => k !== 'review').map(k => `<li><span style="background:color-mix(in srgb, ${App.TYPES[k].color} 30%, #fff)"></span>${App.TYPES[k].label}</li>`).join('')}<li><span class="key-off"></span>Holiday, Sunday or day off</li><li><span class="key-pos"></span>Target done (positive)</li><li><span class="key-neg"></span>Negative remark</li><li><b class="star">★</b> High priority</li></ul>`;
   function markDialog(mark, cells) {
     cells = mark ? mark.cells : cells;
@@ -308,10 +293,10 @@
     const list = App.commitsFor(pid, d);
     modal({ title: `Commitments of ${App.pname(pid)}`,
       body: `<form id="cmf" class="form">${list.map(c => `<fieldset data-cid="${esc(c.id)}"><legend>From the meeting on ${esc(D.nice(c.start))}</legend>
-        <label>Task<input name="task" value="${esc(c.task)}"></label><div class="row2"><label>Days committed<input type="number" name="days" min="1" max="90" value="${c.days}"></label><label>Due<input type="date" name="due" value="${c.due}"></label></div>
+        <label>Task<input name="task" value="${esc(c.task)}"></label><div class="row2"><label>Days committed<input type="number" name="days" min="0" max="90" value="${c.days}"></label><label>Due<input type="date" name="due" value="${c.due}"></label></div>
         <label class="check small"><input type="checkbox" name="del"> Delete this commitment</label></fieldset>`).join('')}</form>`,
       foot: '<span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" form="cmf" class="btn primary">Save</button>',
-      onOpen: m => $('#cmf', m).onsubmit = e => { e.preventDefault(); const edits = $$('fieldset[data-cid]', m).map(f => ({ id: f.dataset.cid, task: $('[name=task]', f).value, days: Number($('[name=days]', f).value) || 1, due: $('[name=due]', f).value, del: $('[name=del]', f).checked })); closeModal();
+      onOpen: m => $('#cmf', m).onsubmit = e => { e.preventDefault(); const edits = $$('fieldset[data-cid]', m).map(f => ({ id: f.dataset.cid, task: $('[name=task]', f).value, days: Math.max(0, Number($('[name=days]', f).value) || 0), due: $('[name=due]', f).value, del: $('[name=del]', f).checked })); closeModal();
         App.commit('Commitments saved', p => { edits.forEach(x => { const c = p.commits.find(y => y.id === x.id); if (!c) return; if (x.del) { p.commits = p.commits.filter(y => y.id !== x.id); return; }
           const daysChanged = x.days !== c.days; c.task = x.task; c.days = x.days; c.due = daysChanged ? D.add(c.start, x.days) : (x.due || c.due); }); }); } });
   }
@@ -367,48 +352,57 @@
     }
   };
 
-  /* ---------------- Companies, with the billing Excel list and search ---------------- */
-  function billSearch(q, cname) {
-    const bl = Store.plan.billList; if (!bl || !q || q.trim().length < 2) return null;
+  /* ---------------- Companies: each company has its own billing list and rate lists, and a search box ---------------- */
+  const FILES = [['bill', 'Billing list'], ['r2526', 'Rate list 2025-26'], ['r2627', 'Rate list 2026-27']];
+  const filesOf = cid => (Store.plan.files || {})[cid] || {};
+  function fileSearch(q, cid) {
+    if (!q || q.trim().length < 2) return null;
     const words = q.toLowerCase().split(/\s+/).filter(Boolean), out = [];
-    bl.sheets.forEach(sh => sh.rows.forEach((r, i) => { const txt = r.join(' ').toLowerCase(); if (words.every(w => txt.includes(w))) out.push({ sheet: sh.name, row: i + 1, cells: r, mine: cname && txt.includes(cname.toLowerCase()) }); }));
-    return out.sort((a, b) => (b.mine - a.mine)).slice(0, 12);
+    const srcs = FILES.map(([k, l]) => ({ k, l, f: filesOf(cid)[k] })).concat([{ k: 'bill', l: 'Billing list (all companies)', f: filesOf('all').bill }]).filter(x => x.f);
+    srcs.forEach(src => { const hits = []; src.f.sheets.forEach(sh => sh.rows.forEach((r, i) => { if (words.every(w => r.join(' ').toLowerCase().includes(w))) hits.push({ sheet: sh.name, row: i + 1, cells: r }); })); out.push({ src, hits: hits.slice(0, 10), more: Math.max(0, hits.length - 10) }); });
+    return out;
   }
   V.companies = {
     title: 'Companies', editing: true,
-    desc: { what: 'Companies: the three groups, who measures each company, its engineers and site days, and the billing list.',
-      why: 'Upload the latest billing Excel list once; then type a work or file name in a company\'s search box to see straight away whether it is already billed. Click a company for its monthly schedule.' },
+    desc: { what: 'Companies: the three groups, who measures each company, its engineers and site days, and its own billing list and rate lists.',
+      why: 'In each company, upload its latest billing list and the rate lists 2025-26 and 2026-27 (Excel or CSV). Then type a work or file name in that company\'s search box: it shows straight away whether it is already billed and where it is in the rate lists. Click a company name for its monthly schedule and 6 pm follow-ups.' },
     render() {
-      const plan = Store.plan, data = App.data, bl = plan.billList;
+      const plan = Store.plan, data = App.data;
       const owners = c => plan.people.filter(x => ((plan.responsibilities[x.id] || {})[c.group] || []).includes(c.id));
+      const fileRow = (c, k, l) => { const f = filesOf(c.id)[k];
+        return `<div class="cf-row"><span class="cf-l">${l}</span>${f ? `<span class="cf-n" title="Uploaded ${esc(D.nice(f.at, { long: true }))}">${esc(f.name)}</span>` : '<span class="muted small">not uploaded</span>'}
+          <label class="btn ghost sm noprint">${icon('upload')}${f ? 'Newer' : 'Upload'}<input type="file" data-cfile="${esc(c.id)}|${k}" accept=".xlsx,.csv" hidden></label>${f ? `<button type="button" class="x noprint" data-cfrm="${esc(c.id)}|${k}" aria-label="Remove ${l}">${icon('x')}</button>` : ''}</div>`; };
       return `<section><header class="head"><h1>Companies</h1></header>
-        <article class="card bl-card"><h2>Billing list (Excel)</h2>
-          ${bl ? `<p><b>${esc(bl.name)}</b> <span class="muted small">uploaded ${esc(D.nice(bl.at, { long: true }))} · ${bl.sheets.reduce((s, x) => s + x.rows.length, 0)} rows in ${bl.sheets.length} sheet${bl.sheets.length > 1 ? 's' : ''}</span></p>` : '<p class="muted">No billing list yet. Upload the latest billing Excel (.xlsx) or CSV file.</p>'}
-          <div class="row-btns noprint"><label class="btn ${bl ? 'ghost' : 'primary'}">${icon('upload')}${bl ? 'Upload a newer list' : 'Upload billing list'}<input type="file" id="bl-file" accept=".xlsx,.csv" hidden></label>${bl ? '<button type="button" class="btn ghost danger" id="bl-rm">Remove list</button>' : ''}</div></article>
+        ${filesOf('all').bill ? `<p class="banner">An older billing list for all companies (${esc(filesOf('all').bill.name)}) is still searched in every company. <button type="button" class="link" data-cfrm="all|bill">Remove it</button></p>` : ''}
         ${Object.keys(App.GROUPS).map(gk => { const wd = Engine.windowDays(plan, gk); return `<h2 class="group">${App.GROUPS[gk]}<span class="grp-days">${wd ? 'days ' + wd.join(', ') : ''}</span></h2><div class="comp-grid">${plan.companies.filter(c => c.group === gk).map(c => {
           const vs = data.gen.visits.filter(v => v.company === c.id).sort((a, b) => a.date < b.date ? -1 : 1), ow = owners(c);
+          const any = FILES.some(([k]) => filesOf(c.id)[k]) || filesOf('all').bill;
           return `<article class="card comp comp-${gk}"><h3><a href="#/company?id=${encodeURIComponent(c.id)}">${esc(c.name)}</a></h3><p class="muted small">${ow.length ? ow.filter(x => !App.isB(x.id)).map(x => esc(x.name)).join(' and ') : 'Nobody assigned'}</p>
             ${(c.engineers || []).some(e => e.name) ? `<p class="small">Engineers: ${engHtml(c)}</p>` : ''}
             <div class="chips">${vs.map(v => `<span class="dchip ${App.isPast(v.date) ? 'past' : ''}" style="--pc:${App.pcolor(v.person)}">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</span>`).join('') || '<span class="muted small">No site day in this timetable</span>'}</div>
-            ${bl ? `<input class="bl-q noprint" data-blq="${esc(c.id)}" placeholder="Is it billed? Type a work or file name" aria-label="Search the billing list"><div class="bl-res" data-blr="${esc(c.id)}"></div>` : ''}</article>`;
+            <div class="cfiles">${FILES.map(([k, l]) => fileRow(c, k, l)).join('')}</div>
+            ${any ? `<input class="bl-q noprint" data-blq="${esc(c.id)}" placeholder="Search: work or file name" aria-label="Search the lists of ${esc(c.name)}"><div class="bl-res" data-blr="${esc(c.id)}"></div>` : ''}</article>`;
         }).join('')}</div>`; }).join('')}</section>`;
     },
     mount(root) {
-      const f = $('#bl-file', root); if (f) f.onchange = async () => {
-        const file = f.files[0]; if (!file) return;
+      $$('[data-cfile]', root).forEach(f => f.onchange = async () => {
+        const file = f.files[0]; if (!file) return; const [cid, k] = f.dataset.cfile.split('|'), lab = FILES.find(x => x[0] === k)[1];
         try {
           const sheets = await IO.readTable(file);
-          const size = JSON.stringify(sheets).length;
-          if (size > 900000) { toast('That file is too big to keep (more than about 900 KB of text). Remove unused sheets or columns and try again.'); return; }
-          App.commit(`Billing list "${file.name}" uploaded`, p => { p.billList = { name: file.name, at: D.today(), sheets }; });
+          if (JSON.stringify(sheets).length > 900000) { toast('That file is too big to keep (more than about 900 KB of text). Remove unused sheets or columns and try again.'); return; }
+          App.commit(`${App.cname(cid)}: ${lab} "${file.name}" uploaded`, p => { p.files = p.files || {}; p.files[cid] = Object.assign({}, p.files[cid], { [k]: { name: file.name, at: D.today(), sheets } }); });
         } catch (e) { toast(e.message || 'That file could not be read.'); }
-      };
-      const rm = $('#bl-rm', root); if (rm) rm.onclick = () => confirmBox('Remove the billing list?', 'The uploaded list is removed. You can undo this.', 'Remove', () => App.commit('Billing list removed', p => { p.billList = null; }), true);
+      });
+      $$('[data-cfrm]', root).forEach(b => b.onclick = () => { const [cid, k] = b.dataset.cfrm.split('|');
+        confirmBox('Remove this file?', 'The uploaded list is removed. You can undo this.', 'Remove', () => App.commit('List removed', p => { if (p.files && p.files[cid]) { delete p.files[cid][k]; if (!Object.keys(p.files[cid]).length) delete p.files[cid]; } }), true); });
       $$('[data-blq]', root).forEach(i => i.oninput = () => {
-        const c = Store.plan.companies.find(x => x.id === i.dataset.blq), res = $(`[data-blr="${i.dataset.blq}"]`, root), r = billSearch(i.value, c && c.name);
+        const cid = i.dataset.blq, res = $(`[data-blr="${cid}"]`, root), r = fileSearch(i.value, cid);
         if (!r) { res.innerHTML = ''; return; }
-        res.innerHTML = r.length ? `<p class="bl-yes">✓ Already billed: found in ${esc(Store.plan.billList.name)}</p><ul>${r.map(x => `<li><small>${esc(x.sheet)}, row ${x.row}</small> ${x.cells.filter(Boolean).map(esc).join(' · ')}</li>`).join('')}</ul>`
-          : `<p class="bl-no">Not found in ${esc(Store.plan.billList.name)}: not billed yet.</p>`;
+        res.innerHTML = r.map(({ src, hits, more }) => {
+          const head = hits.length ? (src.k === 'bill' ? `<p class="bl-yes">✓ Already billed: in ${esc(src.f.name)}</p>` : `<p class="bl-yes rate">Found in ${esc(src.l)} (${esc(src.f.name)})</p>`)
+            : (src.k === 'bill' ? `<p class="bl-no">Not in ${esc(src.f.name)}: not billed yet.</p>` : `<p class="muted small">Not in ${esc(src.l)}.</p>`);
+          return head + (hits.length ? `<ul>${hits.map(x => `<li><small>${esc(x.sheet)}, row ${x.row}</small> ${x.cells.filter(v => v !== '').map(esc).join(' · ')}</li>`).join('')}${more ? `<li class="muted">and ${more} more</li>` : ''}</ul>` : '');
+        }).join('');
       });
     }
   };
@@ -429,7 +423,7 @@
   V.company = {
     title: 'Company schedule',
     desc: { what: 'Company schedule: one company\'s timetable for a month, every day listed.',
-      why: 'Each day\'s work with its notes, priority, and the 6 pm follow-up: the company engineers, the discussion, and the action points for the next day (written on Today).' },
+      why: 'Each day\'s work with its notes and priority, and the 6 pm follow-up points of that day, one point per line, with a tick when done. The same points show on Today, in the next meeting and in the monthly schedule.' },
     render(p) {
       const plan = Store.plan, data = App.data, m = pickMonth(p);
       const c = plan.companies.find(x => x.id === p.id) || plan.companies[0];
@@ -438,8 +432,8 @@
       const owners = plan.people.filter(x => x.id !== 'B' && ((plan.responsibilities[x.id] || {})[c.group] || []).includes(c.id));
       const rows = dates.map(d => {
         const list = ents.filter(e => e.date === d), past = App.isPast(d), hol = data.gen.hol[d], k = c.id + '|' + d, rs = Math.max(1, list.length);
-        const acts = (plan.actions[k] || []).filter(a => a.t);
-        const fuCell = `<td class="fu" rowspan="${rs}">${fu[k] ? `<div class="fu-ro">${esc(fu[k])}</div>` : ''}${acts.length ? `<div class="small"><b>Action points:</b><ul class="pts-notes">${acts.map(a => `<li>${a.done ? '✓ ' : ''}${esc(a.t)}</li>`).join('')}</ul></div>` : ''}</td>`;
+        const acts = plan.actions[k] || [];
+        const fuCell = `<td class="fu" rowspan="${rs}"><ul class="act-ed">${acts.map((a, i) => `<li><input type="checkbox" data-actdone="${esc(k)}|${i}" ${a.done ? 'checked' : ''} aria-label="Done"><input data-act="${esc(k)}|${i}" value="${esc(a.t)}" placeholder="Follow-up point"><button type="button" class="x noprint" data-actrm="${esc(k)}|${i}" aria-label="Remove">${icon('x')}</button></li>`).join('')}</ul><button type="button" class="add-small noprint" data-actadd="${esc(k)}">${icon('plus')}Point</button></td>`;
         const dateCell = `<th class="rowhead" rowspan="${rs}"><b>${D.day(d)}</b> ${D.DAYS[D.dow(d)].slice(0, 3)}</th>`;
         if (!list.length) return `<tr class="${past ? 'past' : ''} ${hol || D.dow(d) === 0 ? 'thin' : ''}">${dateCell}<td colspan="4" class="free">${hol ? esc(hol) : D.dow(d) === 0 ? 'Sunday' : 'No work planned'}</td>${fuCell}</tr>`;
         return list.map((e, i) => {
@@ -451,102 +445,115 @@
       return `<section><header class="head"><div><h1>${esc(c.name)}: ${monthName(m)}</h1><p class="muted">${esc(App.GROUPS[c.group])}. ${owners.length ? 'Measured by ' + owners.map(x => esc(x.name)).join(' and ') : 'Nobody assigned'}. Engineers: ${engHtml(c)}</p></div>
           <div class="acts noprint"><select id="co-pick" class="pick-sel" aria-label="Company">${opts}</select>${printBtn('company')}</div></header>
         ${monthTabs('company', m, { id: c.id })}
-        <div class="scroll"><table class="tbl co-tbl"><thead><tr><th>Date</th><th>Time</th><th>Work and notes</th><th>Who</th><th>Priority</th><th>6 pm follow-up</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+        <div class="scroll"><table class="tbl co-tbl"><thead><tr><th>Date</th><th>Time</th><th>Work and notes</th><th>Who</th><th>Priority</th><th>6 pm follow-up points</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
     },
-    mount(root, p) { const pick = $('#co-pick', root); if (pick) pick.onchange = () => { location.hash = link('company', { id: pick.value, m: pickMonth(p) }); }; }
+    mount(root, p) { bindFollow(root); const pick = $('#co-pick', root); if (pick) pick.onchange = () => { location.hash = link('company', { id: pick.value, m: pickMonth(p) }); }; }
   };
 
-  /* ---------------- Meetings: schedule, agenda, commitments, follow-up points ---------------- */
+  /* ---------------- Meetings: a list of every meeting by date; click one to open it and change it ---------------- */
+  /* Open 6 pm action points for a meeting: everything not done from before this meeting, and what was done since the previous meeting */
+  function meetPoints(o) {
+    const plan = Store.plan, ms = meetings().filter(m => !meetRec(m.key).cancelled), i = ms.findIndex(m => m.key === o.key);
+    const prev = i > 0 ? ms[i - 1].date : plan.settings.start, out = [];
+    Object.keys(plan.actions || {}).forEach(k => { const [c, d] = splitLast(k); if (d >= o.date) return;
+      plan.actions[k].forEach((a, n) => { if (a.t && (!a.done || d >= prev)) out.push({ k, n, a, c, d }); }); });
+    return out.sort((x, y) => x.d < y.d ? -1 : x.d > y.d ? 1 : App.cname(x.c).localeCompare(App.cname(y.c)));
+  }
+  const meetCommits = o => (Store.plan.commits || []).filter(c => c.occ === o.key);
   V.meetings = {
     title: 'Meetings', editing: true,
-    desc: { what: 'Meetings: the joint meetings, all editable.',
-      why: 'Name, time, dates of the month, move or delete a meeting day, the agenda, the days each employee commits to for a task (shown in fine text on Today and in the monthly schedule), and the open action points from the 6 pm follow-ups to discuss.' },
+    desc: { what: 'Meetings: every meeting, date by date.',
+      why: 'Click a meeting to open it. In the opened meeting: its name and day, the agenda (move items up or down; the times follow), the days each employee commits to for each work given to him, the 6 pm follow-up points to discuss, and "Meeting cancelled". The time slot of every meeting stays the same. New meetings are added from the monthly schedule ("+ Meeting"). The dates of the repeating meetings are set in Settings → Repeating work.' },
     render(p) {
-      const plan = Store.plan, data = App.data, st = plan.settings;
-      const minD = D.today() > st.start ? D.today() : st.start;
+      const o = p.occ && App.data.byKey[p.occ];
+      if (o && o.type === 'meeting') return openMeeting(o, p);
+      const list = meetings(), byM = {};
+      list.forEach(m => { (byM[D.month(m.date)] = byM[D.month(m.date)] || []).push(m); });
       return `<section><header class="head"><h1>Meetings</h1>${printBtn('meetings')}</header>
-        <div class="grid2 meet-grid">${plan.tasks.filter(t => t.type === 'meeting').map(t => {
-          const occs = data.gen.occs.filter(o => o.taskId === t.id);
-          const slot = T.m(t.end) - T.m(t.start), ag = t.agenda || [], used = ag.reduce((s, a) => s + (Number(a.minutes) || 0), 0);
-          let cur = T.m(t.start);
-          const tab = (p['t_' + t.id] || 'agenda');
-          const cms = (plan.commits || []).filter(c => c.meet === t.id);
-          const lastHeld = occs.filter(o => App.isPast(o.date)).map(o => o.date).pop() || st.start;
-          const open = []; (t.companies || []).forEach(cid => Object.keys(plan.actions).forEach(k => { const [c, d] = k.split('|'); if (c === cid && d >= lastHeld) plan.actions[k].forEach((a, i) => { if (a.t && !a.done) open.push({ k, i, a, c, d }); }); }));
-          const tabs = `<nav class="tabs plain mt-tabs noprint">${[['agenda', 'Agenda'], ['commit', `Commitments (${cms.length})`], ['fu', `Follow-up points (${open.length})`]].map(([k, l]) => `<a href="${link('meetings', Object.assign({}, p, { ['t_' + t.id]: k }))}" class="${tab === k ? 'on' : ''}">${l}</a>`).join('')}</nav>`;
-          let body = '';
-          if (tab === 'agenda') body = `<div class="bar ${used > slot ? 'over' : ''}"><span style="width:${Math.min(100, slot ? used / slot * 100 : 0)}%"></span></div>
-            <p class="small ${used > slot ? 'bad' : 'muted'}">Agenda: ${used} of ${slot} minutes${used > slot ? `, ${used - slot} too many` : ''}</p>
-            <ol class="ag-edit">${ag.map((a, i) => { const s = T.s(cur); cur += Number(a.minutes) || 0; return `<li data-i="${i}">
-              <div class="ag-top"><span class="tm">${s}</span><input data-f="item" value="${esc(a.item)}" aria-label="Agenda item"><input data-f="minutes" type="number" min="0" max="240" value="${a.minutes}" aria-label="Minutes" class="min"><span class="small muted">min</span><button type="button" class="x" data-rm aria-label="Remove">${icon('x')}</button></div>
-              <div class="ag-who">${App.staff().concat(plan.people.filter(x => App.isB(x.id))).map(pp => `<label class="pick sm" style="--pc:${pp.color}"><input type="checkbox" data-owner="${esc(pp.id)}" ${(a.owners || []).includes(pp.id) ? 'checked' : ''}><span>${esc(pp.id)}</span></label>`).join('')}</div></li>`; }).join('')}</ol>
-            <div class="row-btns noprint"><button type="button" class="btn ghost sm" data-addi>${icon('plus')}Add item</button><button type="button" class="btn ghost sm" data-fit>Fit to ${slot} minutes</button></div>`;
-          else if (tab === 'commit') body = `<p class="muted small">How many days each employee commits to for a task. Shown in fine text on Today and in the monthly schedule until the due date.</p>
-            <datalist id="ag-${esc(t.id)}">${ag.map(a => `<option value="${esc(a.item)}">`).join('')}</datalist>
-            <div class="scroll pay-scroll"><table class="pay-tbl cm-tbl"><thead><tr><th>Meeting day</th><th>Employee</th><th>Task</th><th>Days</th><th>Due</th><th></th></tr></thead><tbody>${cms.map(c => `<tr data-cmid="${esc(c.id)}">
-              <td><select data-cf2="start">${occs.map(o => `<option value="${o.date}" ${o.date === c.start ? 'selected' : ''}>${short(o.date)}</option>`).join('')}${occs.some(o => o.date === c.start) ? '' : `<option value="${c.start}" selected>${short(c.start)}</option>`}</select></td>
-              <td><select data-cf2="pid">${App.staff().map(x => `<option value="${esc(x.id)}" ${x.id === c.pid ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></td>
-              <td><input data-cf2="task" value="${esc(c.task)}" list="ag-${esc(t.id)}" placeholder="Task"></td><td><input type="number" min="1" max="90" data-cf2="days" value="${c.days}"></td>
-              <td class="small">${short(c.due)}</td><td><button type="button" class="x" data-cmrm="${esc(c.id)}" aria-label="Delete">${icon('x')}</button></td></tr>`).join('')}</tbody></table></div>
-            <button type="button" class="add-small noprint" data-cmadd>${icon('plus')}Add commitment</button>`;
-          else body = open.length ? `<ul class="mt-fu">${open.map(x => `<li><label class="check"><input type="checkbox" data-actdone="${esc(x.k)}|${x.i}"><span><b class="co">${esc(App.cname(x.c))}</b> <small class="muted">${short(x.d)}</small> ${esc(x.a.t)}</span></label></li>`).join('')}</ul>` : '<p class="free">No open action points from the 6 pm follow-ups since the last meeting.</p>';
-          return `<article class="card meet" data-m="${esc(t.id)}" style="--c:${App.TYPES.meeting.color}">
-            <input class="mt-title" data-mt="title" value="${esc(t.title)}" aria-label="Meeting name">
-            <div class="mt-when"><label>From<input type="time" data-mt="start" value="${t.start}" step="300"></label><label>To<input type="time" data-mt="end" value="${t.end}" step="300"></label>
-              <label class="mt-days">Every month on<input data-mdays value="${esc((t.days || []).join(', '))}" placeholder="e.g. 5, 24" aria-label="Dates of the month"></label></div>
-            <ul class="mt-occ">${occs.map(o => App.isPast(o.date) ? `<li class="past"><span>${D.nice(o.date, { long: true })}</span><span class="muted small">held</span></li>`
-              : `<li><input type="date" data-mocc="${esc(o.key)}" value="${o.date}" min="${minD}" max="${st.end}" aria-label="Meeting day"><span class="muted small">${o.away && o.away.length ? 'away: ' + o.away.map(x => esc(App.pname(x))).join(', ') : o.shifted ? 'moved from ' + short(o.planned) : ''}</span><button type="button" class="x" data-mdel="${esc(o.key)}" aria-label="Delete this meeting day">${icon('trash')}</button></li>`).join('') || '<li class="muted small">No day in this timetable</li>'}</ul>
-            ${tabs}${body}</article>`;
-        }).join('')}</div></section>`;
+        ${Object.keys(byM).map(mo => `<h2 class="group">${monthName(mo)}</h2><ul class="meet-list">${byM[mo].map(m => { const r = meetRec(m.key), ag = meetAgenda(m), cm = meetCommits(m).length;
+          const st = r.cancelled ? '<span class="ml-st cancel">Cancelled</span>' : m.date === D.today() ? '<span class="ml-st today">Today</span>' : App.isPast(m.date) ? '<span class="ml-st held">Held</span>' : '';
+          return `<li class="${r.cancelled ? 'cancelled' : ''} ${App.isPast(m.date) ? 'past' : ''}"><a href="${link('meetings', { occ: m.key })}"><span class="ml-d"><b>${D.day(m.date)}</b><small>${D.DAYS[D.dow(m.date)].slice(0, 3)}</small></span>
+            <span class="ml-t"><b>${esc(meetTitle(m))}</b><small>${esc(D.nice(m.date, { long: true }))} · ${m.start}–${m.end} · ${ag.length} agenda item${ag.length === 1 ? '' : 's'}${cm ? ` · ${cm} commitment${cm === 1 ? '' : 's'}` : ''}</small></span>${st}<span class="ml-go">${icon('right')}</span></a></li>`; }).join('')}</ul>`).join('') || '<p class="free">No meetings in this timetable.</p>'}</section>`;
     },
-    mount(root) {
-      bindFollow(root);
-      $$('.meet', root).forEach(card => {
-        const id = card.dataset.m;
-        const save = (label, fn) => App.commit(label, p => { const t = p.tasks.find(x => x.id === id); t.agenda = t.agenda || []; fn(t.agenda, t); });
-        $$('[data-mt]', card).forEach(inp => inp.onchange = () => {
-          const f = inp.dataset.mt, t = App.task(id), v = inp.value;
-          if (f !== 'title' && (f === 'start' ? T.m(t.end) <= T.m(v) : T.m(v) <= T.m(t.start))) { toast('The end time must be after the start time.'); App.render(); return; }
-          save('Meeting saved', (ag, tt) => { tt[f] = f === 'title' ? (v || tt.title) : v; });
-        });
-        const dd = $('[data-mdays]', card); dd.onchange = () => {
-          const days = [...new Set(dd.value.split(/[^0-9]+/).map(Number).filter(n => n >= 1 && n <= 31))].sort((a, b) => a - b);
-          if (!days.length) { toast('Give at least one date of the month, for example 5.'); App.render(); return; }
-          save(`Meeting on ${days.join(', ')} of each month`, (ag, t) => { t.days = days; });
-        };
-        $$('[data-mocc]', card).forEach(inp => inp.onchange = () => { if (inp.value) App.moveOcc(inp.dataset.mocc, inp.value); });
-        $$('[data-mdel]', card).forEach(b => b.onclick = () => { const o = App.data.byKey[b.dataset.mdel];
-          confirmBox('Delete this meeting day?', `${o.title} on ${D.nice(o.date, { long: true })} will be removed. You can undo this.`, 'Delete', () => App.commit(`Deleted ${o.title}, ${D.nice(o.date)}`, p => { p.overrides[o.key] = { deleted: true }; }), true); });
-        $$('li[data-i]', card).forEach(li => {
-          const i = +li.dataset.i;
-          $$('[data-f]', li).forEach(inp => inp.onchange = () => save('Agenda saved', ag => { ag[i][inp.dataset.f] = inp.dataset.f === 'minutes' ? Number(inp.value) : inp.value; }));
-          $$('[data-owner]', li).forEach(c => c.onchange = () => save('Agenda saved', ag => { const o = new Set(ag[i].owners || []); if (c.checked) o.add(c.dataset.owner); else o.delete(c.dataset.owner); ag[i].owners = Store.plan.people.map(x => x.id).filter(x => o.has(x)); }));
-          $('[data-rm]', li).onclick = () => save('Agenda item removed', ag => ag.splice(i, 1));
-        });
-        const ai = $('[data-addi]', card); if (ai) ai.onclick = () => save('Agenda item added', ag => ag.push({ item: 'New item', minutes: 10, owners: ['B'] }));
-        const fit = $('[data-fit]', card); if (fit) fit.onclick = () => save('Agenda fitted', (ag, t) => {
-          const slot = T.m(t.end) - T.m(t.start), tot = ag.reduce((s, a) => s + (Number(a.minutes) || 0), 0) || 1;
-          const raw = ag.map(a => (Number(a.minutes) || 0) / tot * slot), base = raw.map(r => Math.max(5, Math.floor(r / 5) * 5));
-          let left = slot - base.reduce((s, x) => s + x, 0);
-          const ord = raw.map((r, k) => [r - base[k], k]).sort((x, y) => y[0] - x[0]);
-          for (let n = 0; left >= 5 && n < 200; n++) { base[ord[n % ord.length][1]] += 5; left -= 5; }
-          for (let k = base.length - 1; left < 0 && k >= 0; k--) while (left < 0 && base[k] > 5) { base[k] -= 5; left += 5; }
-          ag.forEach((a, k) => { a.minutes = base[k]; });
-        });
-        /* commitments */
-        const ca = $('[data-cmadd]', card); if (ca) ca.onclick = () => {
-          const t = App.task(id), occs = App.data.gen.occs.filter(o => o.taskId === id), start = (occs.find(o => !App.isPast(o.date)) || occs[occs.length - 1] || { date: D.today() }).date;
-          const owner = ((t.agenda || [])[0] || {}).owners || [];
-          App.commit('Commitment added', p => { p.commits.push({ id: 'c' + Date.now().toString(36), meet: id, start, pid: (owner.find(x => x !== 'B') || App.staff()[0].id), task: ((t.agenda || [])[0] || {}).item || '', days: 3, due: D.add(start, 3) }); });
-        };
-        $$('tr[data-cmid]', card).forEach(tr => $$('[data-cf2]', tr).forEach(el => el.onchange = () => {
-          const f = el.dataset.cf2, cid = tr.dataset.cmid;
-          App.commit('Commitment saved', p => { const c = p.commits.find(x => x.id === cid); if (!c) return; c[f] = f === 'days' ? Math.max(1, Number(el.value) || 1) : el.value; c.due = D.add(c.start, c.days); });
-        }));
-        $$('[data-cmrm]', card).forEach(b => b.onclick = () => App.commit('Commitment deleted', p => { p.commits = p.commits.filter(x => x.id !== b.dataset.cmrm); }));
-      });
+    mount(root, p) {
+      const o = p.occ && App.data.byKey[p.occ]; if (!o || o.type !== 'meeting') return;
+      mountMeeting(root, o, p);
     }
   };
+  function openMeeting(o, p) {
+    const plan = Store.plan, st = plan.settings, r = meetRec(o.key), ag = meetAgenda(o), past = App.isPast(o.date);
+    const tab = ['agenda', 'commit', 'fu'].includes(p.tab) ? p.tab : 'agenda', pts = meetPoints(o), cms = meetCommits(o);
+    const slot = T.m(o.end) - T.m(o.start), used = ag.reduce((s, a) => s + (Number(a.minutes) || 0), 0);
+    const minD = D.today() > st.start ? D.today() : st.start;
+    const tabs = `<nav class="tabs mt-tabs noprint">${[['agenda', 'Agenda'], ['commit', `Commitments (${cms.length})`], ['fu', `6 pm follow-up points (${pts.filter(x => !x.a.done).length})`]].map(([k, l]) => `<a href="${link('meetings', { occ: o.key, tab: k })}" class="${tab === k ? 'on' : ''}">${l}</a>`).join('')}</nav>`;
+    let body;
+    if (tab === 'agenda') { let cur = T.m(o.start);
+      body = `<div class="bar ${used > slot ? 'over' : ''}"><span style="width:${Math.min(100, slot ? used / slot * 100 : 0)}%"></span></div>
+        <p class="small ${used > slot ? 'bad' : 'muted'}">Agenda: ${used} of ${slot} minutes${used > slot ? `, ${used - slot} too many` : ''}</p>
+        <ol class="ag-edit">${ag.map((a, i) => { const s = T.s(cur); cur += Number(a.minutes) || 0; return `<li data-i="${i}">
+          <div class="ag-top"><span class="tm">${s}–${T.s(cur)}</span><input data-f="item" value="${esc(a.item)}" aria-label="Agenda item"><input data-f="minutes" type="number" min="0" max="240" value="${a.minutes}" aria-label="Minutes" class="min"><span class="small muted">min</span>
+            <span class="ag-mv noprint"><button type="button" class="round sm" data-up ${i === 0 ? 'disabled' : ''} aria-label="Move up" title="Move up">↑</button><button type="button" class="round sm" data-down ${i === ag.length - 1 ? 'disabled' : ''} aria-label="Move down" title="Move down">↓</button></span>
+            <button type="button" class="x" data-rm aria-label="Remove">${icon('x')}</button></div>
+          <div class="ag-who">${App.staff().concat(plan.people.filter(x => App.isB(x.id))).map(pp => `<label class="pick sm" style="--pc:${pp.color}"><input type="checkbox" data-owner="${esc(pp.id)}" ${(a.owners || []).includes(pp.id) ? 'checked' : ''}><span>${esc(pp.id)}</span></label>`).join('')}</div></li>`; }).join('')}</ol>
+        <div class="row-btns noprint"><button type="button" class="btn ghost sm" data-addi>${icon('plus')}Add item</button>${ag.length ? `<button type="button" class="btn ghost sm" data-fit>Fit to ${slot} minutes</button>` : ''}</div>`; }
+    else if (tab === 'commit') {
+      const staff = App.staff().filter(x => ag.some(a => (a.owners || []).includes(x.id)));
+      const opt = (v, sel) => `<option value="${v}" ${String(sel) === String(v) ? 'selected' : ''}>${v === '' ? '–' : v === 0 ? '0 (same day)' : v + ' day' + (v === 1 ? '' : 's')}</option>`;
+      const orphans = cms.filter(c => !ag.some(a => a.item === c.task && (a.owners || []).includes(c.pid)));
+      body = `<p class="muted small">For each employee, only the work given to him in this meeting. Choose the days he commits to: 0 = to be completed the same day. Shown in fine text on Today and in the monthly schedule until the due date.</p>
+        ${staff.map(x => `<div class="cm-emp" style="--pc:${x.color}"><div class="cm-who">${App.avatar(x.id, 'sm')}<b>${esc(x.name)}</b></div><table class="cm-tbl2"><tbody>${ag.filter(a => (a.owners || []).includes(x.id)).map(a => { const c = cms.find(y => y.pid === x.id && y.task === a.item);
+          return `<tr><td>${esc(a.item)}</td><td><select data-cm="${esc(x.id)}" data-task="${esc(a.item)}" aria-label="Days committed">${['', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15, 20, 21, 25, 30].map(v => opt(v, c ? c.days : '')).join('')}${c && ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15, 20, 21, 25, 30].includes(c.days) ? opt(c.days, c.days) : ''}</select></td><td class="small muted">${c ? 'due ' + esc(D.nice(c.due)) : ''}</td></tr>`; }).join('')}</tbody></table></div>`).join('') || '<p class="free">No work is given to any employee in the agenda yet. Tick the employees under each agenda item first.</p>'}
+        ${orphans.length ? `<p class="small muted">Older commitments whose agenda item was changed: ${orphans.map(c => `${esc(App.pname(c.pid))}: ${esc(c.task)} <button type="button" class="link" data-cmrm="${esc(c.id)}">delete</button>`).join('; ')}</p>` : ''}`;
+    } else body = pts.length ? `<ul class="mt-fu">${pts.map(x => `<li><label class="check"><input type="checkbox" data-actdone="${esc(x.k)}|${x.n}" ${x.a.done ? 'checked' : ''}><span class="${x.a.done ? 'struck' : ''}"><b class="co">${esc(App.cname(x.c))}</b> <small class="muted">${short(x.d)}</small> ${esc(x.a.t)}</span></label></li>`).join('')}</ul>` : '<p class="free">No 6 pm follow-up points to discuss.</p>';
+    return `<section class="meet-open"><a class="back noprint" href="#/meetings">${icon('left')}All meetings</a>
+      <article class="card meet ${r.cancelled ? 'cancelled' : ''}" style="--c:${App.TYPES.meeting.color}">
+        <div class="mo-h"><input class="mt-title" data-mtitle value="${esc(meetTitle(o))}" aria-label="Meeting name">
+          <label class="tchip cancel-t ${r.cancelled ? 'on' : ''}"><input type="checkbox" data-mcancel ${r.cancelled ? 'checked' : ''}><span>${r.cancelled ? '✕ Meeting cancelled' : 'Meeting cancelled'}</span></label></div>
+        <div class="mt-when"><label>Day<input type="date" data-mdate value="${o.date}" min="${minD}" max="${st.end}" ${past ? 'disabled' : ''}></label><span class="muted">${o.start}–${o.end} (same time slot for every meeting)</span>
+          ${o.extra && !past ? `<button type="button" class="btn ghost sm danger" data-mdelx>${icon('trash')}Delete this meeting</button>` : ''}</div>
+        <p class="muted small">Attending: ${o.people.map(x => esc(App.pname(x))).join(', ') || 'nobody'}${o.away && o.away.length ? `. Out of station: ${o.away.map(x => esc(App.pname(x))).join(', ')}` : ''}</p>
+        ${tabs}${body}</article></section>`;
+  }
+  function mountMeeting(root, o, p) {
+    bindFollow(root);
+    const key = o.key, card = $('.meet', root);
+    const saveAg = (label, fn) => App.commit(label, pl => { pl.meetDays = pl.meetDays || {}; const r = pl.meetDays[key] = pl.meetDays[key] || {};
+      if (!Array.isArray(r.agenda)) r.agenda = JSON.parse(JSON.stringify(meetAgenda(o))); fn(r.agenda); });
+    $('[data-mtitle]', card).onchange = e => { const v = e.target.value.trim(); App.commit('Meeting name saved', pl => { pl.meetDays = pl.meetDays || {}; const r = pl.meetDays[key] = pl.meetDays[key] || {}; if (v && v !== o.title) r.title = v; else delete r.title; if (o.extra) { const x = pl.extra.find(y => 'x:' + y.id === key); if (x && v) { x.title = v; delete r.title; } } }); };
+    $('[data-mcancel]', card).onchange = e => { const on = e.target.checked; App.commit(on ? `Meeting of ${D.nice(o.date)} cancelled` : `Meeting of ${D.nice(o.date)} not cancelled`, pl => { pl.meetDays = pl.meetDays || {}; const r = pl.meetDays[key] = pl.meetDays[key] || {}; if (on) r.cancelled = true; else delete r.cancelled; }); };
+    const md = $('[data-mdate]', card); if (md) md.onchange = () => { if (md.value) App.moveOcc(key, md.value); };
+    const dx = $('[data-mdelx]', card); if (dx) dx.onclick = () => confirmBox('Delete this meeting?', `${meetTitle(o)} on ${D.nice(o.date, { long: true })} is removed. You can undo this.`, 'Delete', () => { App.commit('Meeting deleted', pl => { pl.extra = pl.extra.filter(x => 'x:' + x.id !== key); if (pl.meetDays) delete pl.meetDays[key]; pl.commits = (pl.commits || []).filter(c => c.occ !== key); }); location.hash = '#/meetings'; }, true);
+    $$('li[data-i]', card).forEach(li => {
+      const i = +li.dataset.i;
+      $$('[data-f]', li).forEach(inp => inp.onchange = () => { const f = inp.dataset.f, old = (meetAgenda(o)[i] || {}).item;
+        saveAg('Agenda saved', ag => { ag[i][f] = f === 'minutes' ? Number(inp.value) : inp.value; });
+        if (f === 'item') App.commit('Commitments follow the new name', pl => { (pl.commits || []).forEach(c => { if (c.occ === key && c.task === old) c.task = inp.value; }); }); });
+      $$('[data-owner]', li).forEach(c => c.onchange = () => saveAg('Agenda saved', ag => { const s2 = new Set(ag[i].owners || []); if (c.checked) s2.add(c.dataset.owner); else s2.delete(c.dataset.owner); ag[i].owners = Store.plan.people.map(x => x.id).filter(x => s2.has(x)); }));
+      $('[data-rm]', li).onclick = () => saveAg('Agenda item removed', ag => ag.splice(i, 1));
+      const up = $('[data-up]', li), dn = $('[data-down]', li);
+      if (up) up.onclick = () => { App.keepScroll = true; saveAg('Agenda item moved up', ag => { const [x] = ag.splice(i, 1); ag.splice(i - 1, 0, x); }); };
+      if (dn) dn.onclick = () => { App.keepScroll = true; saveAg('Agenda item moved down', ag => { const [x] = ag.splice(i, 1); ag.splice(i + 1, 0, x); }); };
+    });
+    const ai = $('[data-addi]', card); if (ai) ai.onclick = () => saveAg('Agenda item added', ag => ag.push({ item: 'New item', minutes: 10, owners: ['B'] }));
+    const fit = $('[data-fit]', card); if (fit) fit.onclick = () => saveAg('Agenda fitted', ag => {
+      const slot = T.m(o.end) - T.m(o.start), tot = ag.reduce((s2, a) => s2 + (Number(a.minutes) || 0), 0) || 1;
+      const raw = ag.map(a => (Number(a.minutes) || 0) / tot * slot), base = raw.map(r2 => Math.max(5, Math.floor(r2 / 5) * 5));
+      let left = slot - base.reduce((s2, x) => s2 + x, 0);
+      const ord = raw.map((r2, k) => [r2 - base[k], k]).sort((x, y) => y[0] - x[0]);
+      for (let n = 0; left >= 5 && n < 200; n++) { base[ord[n % ord.length][1]] += 5; left -= 5; }
+      for (let k = base.length - 1; left < 0 && k >= 0; k--) while (left < 0 && base[k] > 5) { base[k] -= 5; left += 5; }
+      ag.forEach((a, k) => { a.minutes = base[k]; });
+    });
+    $$('[data-cm]', card).forEach(sel => sel.onchange = () => { const pid = sel.dataset.cm, task = sel.dataset.task, v = sel.value;
+      App.keepScroll = true;
+      App.commit(v === '' ? 'Commitment removed' : `${App.pname(pid)} commits ${v} day${v === '1' ? '' : 's'}: ${task}`, pl => { pl.commits = pl.commits || [];
+        const c = pl.commits.find(y => y.occ === key && y.pid === pid && y.task === task);
+        if (v === '') { if (c) pl.commits = pl.commits.filter(y => y !== c); return; }
+        const days = Number(v), due = D.add(o.date, days);
+        if (c) Object.assign(c, { days, due, start: o.date }); else pl.commits.push({ id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), occ: key, meet: o.taskId, start: o.date, pid, task, days, due });
+      }); });
+    $$('[data-cmrm]', card).forEach(b => b.onclick = () => App.commit('Commitment deleted', pl => { pl.commits = pl.commits.filter(x => x.id !== b.dataset.cmrm); }));
+  }
 
   /* ---------------- Advance & billing days: everything editable, tasks point by point ---------------- */
   V.billing = {
@@ -598,5 +605,5 @@
     }
   };
 
-  Object.assign(App, { companyEntries, monthName, listDates, pickMonth, payRows, STEPS, typeStyle, restOf, workOf });
+  Object.assign(App, { meetAgenda, meetTitle, meetRec, companyEntries, monthName, listDates, pickMonth, payRows, STEPS, typeStyle, restOf, workOf });
 })();

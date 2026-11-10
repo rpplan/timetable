@@ -1052,7 +1052,7 @@ b.co, .co { font-weight: 800; }
 .lc-how ol { margin: 0; gap: 4px 16px; font-size: 12.5px; }
 .lc-how .n { width: 19px; height: 19px; font-size: 11px; }
 .lc-bar .lc-when { order: 10; flex: 1 1 100%; font-size: 13.5px; }
-@media (min-width: 1500px) { .lc-bar .lc-when { order: 0; flex: 0 1 auto; } .lc-bar input[type=range] { flex-basis: 160px; } }
+
 .lc-how { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; font-size: 12.5px; }
 .lc-how > b { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .lc-how ol { display: flex; flex-wrap: wrap; gap: 4px 14px; }
@@ -1108,3 +1108,73 @@ b.co, .co { font-weight: 800; }
   .eng-row { grid-template-columns: 1fr; }
 }
 .g-duty { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ---------- version 11 ---------- */
+/* link chart: the play button and the time bar never move */
+#lc-play { width: 112px; justify-content: center; flex: none; }
+.lc-bar .lc-when { order: 10; flex: 1 1 100%; min-height: 1.4em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* today: meeting line, leave and sufficient ticks */
+.meet-line { display: block; background: color-mix(in srgb, #6b63c9 14%, var(--card)); border: 1.5px solid color-mix(in srgb, #6b63c9 45%, transparent); color: #3f37a0; border-radius: 12px; padding: 10px 14px; font-weight: 800; letter-spacing: .04em; text-decoration: none; margin-bottom: 12px; }
+.meet-line:hover { background: color-mix(in srgb, #6b63c9 22%, var(--card)); }
+.meet-line.cancelled { text-decoration: line-through; color: var(--muted); border-style: dashed; }
+:root[data-theme="dark"] .meet-line { color: #c3bdff; }
+.leave-t.on { background: #ffe1c2; border-color: #d9480f; color: #8a3200; }
+:root[data-theme="dark"] .leave-t.on { background: #46301a; color: #ffb27a; }
+.suff { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.dc-tom { margin: 10px 0 0; }
+/* month: meeting button under the date */
+.month .rowhead .mt-add, .month .rowhead .mt-chip { display: block; margin-top: 4px; font-size: 11px; font-weight: 700; border-radius: 99px; padding: 1px 7px; width: max-content; text-decoration: none; }
+.mt-add { border: 1px dashed color-mix(in srgb, #6b63c9 55%, transparent); background: none; color: #5a52b8; cursor: pointer; opacity: .55; }
+tr:hover .mt-add, .mt-add:focus-visible { opacity: 1; }
+.mt-chip { background: color-mix(in srgb, #6b63c9 16%, var(--card)); color: #3f37a0; }
+.mt-chip.cancelled { text-decoration: line-through; opacity: .6; }
+:root[data-theme="dark"] .mt-chip, :root[data-theme="dark"] .mt-add { color: #c3bdff; }
+.month tr.thin .rowhead .mt-add { display: inline-block; margin: 0 0 0 6px; }
+/* meetings list and the opened meeting */
+.meet-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.meet-list a { display: flex; gap: 14px; align-items: center; background: var(--card); border-radius: 12px; box-shadow: var(--shadow); padding: 10px 14px; text-decoration: none; color: var(--ink); border-left: 4px solid #6b63c9; }
+.meet-list a:hover { background: color-mix(in srgb, #6b63c9 7%, var(--card)); }
+.meet-list li.past a { opacity: .7; }
+.meet-list li.cancelled a { border-left-color: var(--muted); }
+.meet-list li.cancelled .ml-t b { text-decoration: line-through; }
+.ml-d { display: grid; text-align: center; min-width: 40px; } .ml-d b { font-size: 22px; line-height: 1; } .ml-d small { color: var(--muted); }
+.ml-t { flex: 1; display: grid; gap: 2px; } .ml-t small { color: var(--muted); }
+.ml-st { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; border-radius: 99px; padding: 2px 9px; }
+.ml-st.cancel { background: #ffe1c2; color: #8a3200; } .ml-st.today { background: var(--accent); color: #fff; } .ml-st.held { background: var(--soft); color: var(--muted); }
+.ml-go { color: var(--muted); }
+.back { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 10px; font-weight: 700; text-decoration: none; }
+.meet-open .meet { max-width: 900px; }
+.meet.cancelled { opacity: .75; background: repeating-linear-gradient(135deg, var(--card) 0 12px, var(--soft) 12px 24px); }
+.mo-h { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.mo-h .mt-title { flex: 1 1 260px; }
+.cancel-t.on { background: #ffe1c2; border-color: #d9480f; color: #8a3200; }
+.ag-mv { display: inline-flex; gap: 2px; }
+.round.sm { width: 28px; height: 28px; font-size: 14px; font-weight: 800; }
+.round.sm:disabled { opacity: .3; cursor: default; }
+.ag-top .tm { min-width: 92px; }
+.cm-emp { border-left: 4px solid var(--pc); background: var(--soft); border-radius: 10px; padding: 8px 10px; margin-top: 10px; }
+.cm-who { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.cm-tbl2 { width: 100%; border-collapse: collapse; }
+.cm-tbl2 td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: middle; }
+.cm-tbl2 td:nth-child(2) { width: 140px; } .cm-tbl2 td:nth-child(3) { width: 110px; }
+.cm-tbl2 select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; background: var(--card); color: var(--ink); }
+/* companies: files of each company */
+.cfiles { display: grid; gap: 4px; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.cf-row { display: flex; align-items: center; gap: 6px; font-size: 12.5px; min-width: 0; }
+.cf-l { font-weight: 700; min-width: 112px; }
+.cf-n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--green); font-weight: 600; }
+.cf-row .muted { flex: 1; }
+.cf-row .btn.sm { padding: 3px 8px; font-size: 12px; }
+.bl-yes.rate { color: var(--accent); }
+/* company schedule: follow-up points */
+.co-tbl td.fu { min-width: 240px; }
+.co-tbl .act-ed li { gap: 4px; }
+.co-tbl .act-ed input[data-act] { font-size: 13px; padding: 4px 6px; }
+@media (max-width: 640px) {
+  .cm-tbl2 td:nth-child(2) { width: 110px; } .cm-tbl2 td:nth-child(3) { display: none; }
+  .cf-l { min-width: 0; }
+  .co-tbl td.fu { min-width: 200px; }
+}
+@media print { .meet-line, .mt-add, .mt-chip { display: none !important; } }
+.meet-line small { font-weight: 600; letter-spacing: 0; margin-left: 8px; opacity: .8; }
+.mline.m-cancel { text-decoration: line-through; opacity: .55; }

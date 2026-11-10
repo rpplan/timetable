@@ -356,9 +356,9 @@
   }
 
   /* ---------- playing ---------- */
-  function stop(root) { state.playing = false; clearInterval(state.timer); state.timer = null; const b = root && $('#lc-play', root); if (b) b.innerHTML = icon('play') + 'Play'; }
+  function stop(root) { state.playing = false; clearInterval(state.timer); state.timer = null; const b = root && $('#lc-play', root); if (b) { b.innerHTML = icon('play') + '<span>Play</span>'; b.setAttribute('aria-label', 'Play'); } }
   function play(root) {
-    state.playing = true; state.sel = null; $('#lc-play', root).innerHTML = icon('pause') + 'Pause';
+    clearInterval(state.timer); state.playing = true; state.sel = null; const pb = $('#lc-play', root); pb.innerHTML = icon('pause') + '<span>Pause</span>'; pb.setAttribute('aria-label', 'Pause');
     state.timer = setInterval(() => {
       if (!document.body.contains(root) || !$('#lc-svg', root)) { stop(); return; }
       const n = steps().length; state.idx = (state.idx + 1) % n; draw(root);
@@ -380,7 +380,7 @@
           <button type="button" class="round" id="lc-prev" aria-label="Back">${icon('left')}</button>
           <input type="range" id="lc-range" min="0" value="0" aria-label="Time">
           <button type="button" class="round" id="lc-next" aria-label="Forward">${icon('right')}</button>
-          <button type="button" class="btn primary" id="lc-play">${icon('play')}Play</button>
+          <button type="button" class="btn primary" id="lc-play" aria-label="Play">${icon('play')}<span>Play</span></button>
           <span class="lc-when"><b id="lc-when"></b> <span class="muted small" id="lc-note"></span></span>
           <select id="lc-speed" aria-label="Speed"><option value="1200">Slow</option><option value="700" selected>Normal</option><option value="300">Fast</option></select>
           <span class="lc-more"><button type="button" class="btn ghost sm" id="lc-copyall" title="Copy everything shown now to more days or hours">${icon('copy')}<span>Copy moment</span></button><button type="button" class="btn ghost sm" id="lc-reset" title="Put the boxes back in their places">Reset</button><button type="button" class="btn ghost sm" data-print="chart" title="Print / save PDF">${icon('print')}</button></span>

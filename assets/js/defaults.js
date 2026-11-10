@@ -16,6 +16,6 @@
     },
     holidays: [], people: [], companies: [], responsibilities: {}, tasks: [], notes: [],
     away: {}, overrides: {}, visitOverrides: {}, status: {}, reviews: {}, remarks: {}, extra: [],
-    importance: {}, clear: {}, leave: {}, targets: {}, followups: {}, admin: {}, chart: { pos: {} }, paySheets: {}
+    importance: {}, clear: {}, leave: {}, targets: {}, followups: {}, admin: {}, chart: { pos: {} }, paySheets: {}, meetDays: {}, files: {}
   };
 })(window);

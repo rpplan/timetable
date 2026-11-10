@@ -90,8 +90,9 @@
     delete p.reviews;
     out.private = JSON.stringify({ admin: p.admin || {}, badmin: p.badmin || {}, bPin: p.settings.bPin || '' });
     delete p.admin; delete p.badmin; p.settings.bPin = '';
-    if (p.billList) out.bills = JSON.stringify(p.billList);   // the uploaded billing Excel list, in its own document
-    delete p.billList;
+    // each uploaded list (billing list, rate lists) of each company in its own document, so no document gets too big
+    Object.keys(p.files || {}).forEach(cid => Object.keys(p.files[cid] || {}).forEach(k => { out['file-' + cid + '-' + k] = JSON.stringify(p.files[cid][k]); }));
+    delete p.files; delete p.billList;
     delete p.savedAt;
     out.plan = JSON.stringify(p);
     Object.keys(rec).forEach(m => { out['rec-' + m] = JSON.stringify(rec[m]); });
@@ -101,7 +102,9 @@
     const p = JSON.parse(docs.plan);
     const priv = docs.private ? JSON.parse(docs.private) : {};
     p.admin = priv.admin || {}; p.badmin = priv.badmin || {}; p.settings = p.settings || {}; p.settings.bPin = priv.bPin || '';
-    p.billList = docs.bills ? JSON.parse(docs.bills) : null;
+    if (docs.bills) p.billList = JSON.parse(docs.bills);   // older single list: moved into the files when the plan is checked
+    p.files = {};
+    Object.keys(docs).filter(k => k.startsWith('file-')).forEach(k => { const rest = k.slice(5), i = rest.lastIndexOf('-'); const cid = rest.slice(0, i), kind = rest.slice(i + 1); (p.files[cid] = p.files[cid] || {})[kind] = JSON.parse(docs[k]); });
     REC.forEach(s => { p[s] = {}; }); p.reviews = { days: {}, pay: {} };
     Object.keys(docs).filter(k => k.startsWith('rec-')).forEach(k => {
       const r = JSON.parse(docs[k]);

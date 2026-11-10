@@ -95,7 +95,10 @@
     if (!p.paySheets || typeof p.paySheets !== 'object') p.paySheets = {};
     if (!Array.isArray(p.marks)) p.marks = [];
     if (!Array.isArray(p.commits)) p.commits = [];
-    if (p.billList === undefined) p.billList = null;
+    if (!p.meetDays || typeof p.meetDays !== 'object') p.meetDays = {};
+    if (!p.files || typeof p.files !== 'object') p.files = {};
+    if (p.billList) { p.files.all = Object.assign({}, p.files.all, { bill: p.billList }); }   // the old list for all companies is kept and still searched
+    delete p.billList;
     if ((p.version || 1) < 8) {
       if (p.settings.end < '2026-12-31') p.settings.end = '2026-12-31';      // timetable runs to 31 December 2026
       const fix = s => typeof s === 'string' ? s.replace(/P \/ P1/g, 'P').replace(/\bP\/P1\b/g, 'P').replace(/\bP1\b/g, 'P') : s;   // "P1" is called "P" everywhere

@@ -244,7 +244,7 @@
     data.gen.visits.slice().sort((a, b) => cn(a.company) === cn(b.company) ? (a.date < b.date ? -1 : 1) : (cn(a.company) < cn(b.company) ? -1 : 1))
       .forEach(v => comp.push([cn(v.company), App.GROUPS[(plan.companies.find(c => c.id === v.company) || {}).group] || '', v.date, D.DAYS[D.dow(v.date)], nm(v.person), v.cycle, v.repeat ? 'Continued' : 'First']));
     const meet = [['Date', 'Meeting', 'Attending', 'Out of station', 'Start', 'Agenda item', 'Minutes', 'People']];
-    data.gen.occs.filter(o => o.type === 'meeting').forEach(o => { let cur = T.m(o.start); ((App.task(o.taskId) || {}).agenda || []).forEach(a => { meet.push([o.date, o.title, o.people.map(nm).join(', '), (o.away || []).map(nm).join(', '), T.s(cur), a.item, a.minutes, (a.owners || []).map(nm).join(', ')]); cur += Number(a.minutes) || 0; }); });
+    data.gen.occs.filter(o => o.type === 'meeting').forEach(o => { let cur = T.m(o.start); App.meetAgenda(o).forEach(a => { meet.push([o.date, App.meetTitle(o) + (App.meetRec(o.key).cancelled ? ' (cancelled)' : ''), o.people.map(nm).join(', '), (o.away || []).map(nm).join(', '), T.s(cur), a.item, a.minutes, (a.owners || []).map(nm).join(', ')]); cur += Number(a.minutes) || 0; }); });
     const pay = [['Date', 'Kind', 'Start', 'End', 'Company', 'Steps', 'People', 'Done']];
     data.gen.occs.filter(o => o.type === 'advance' || o.type === 'billing').forEach(o => App.payRows(o).forEach(r => pay.push([o.date, o.title, r.start, r.end, r.company === 'general' ? 'All works' : cn(r.company), r.steps, o.people.map(nm).join(', '), (plan.reviews.pay || {})[o.key + '|' + r.company] ? 'Yes' : ''])));
     const sched = [['Date', 'Day', 'Start', 'End', 'Hours', 'Work', 'Kind', 'People', 'Out of station']];
