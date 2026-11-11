@@ -118,9 +118,14 @@
       $$('[data-pay]', root).forEach(c => c.onchange = () => { const r = Store.plan.reviews; r.pay = r.pay || {}; if (c.checked) r.pay[c.dataset.pay] = true; else delete r.pay[c.dataset.pay]; Store.save(true); App.keepScroll = true; App.render(); });
       bindFollow(root);
       $$('form[data-addtask]', root).forEach(f => f.onsubmit = e => {
-        e.preventDefault(); const pid = f.dataset.addtask, fd = new FormData(f), w = fd.get('w'), title = String(fd.get('t') || '').trim(); if (!title) return;
+        e.preventDefault(); const pid = f.dataset.addtask, fd = new FormData(f), w = fd.get('w'), cid = fd.get('c') && fd.get('c') !== '-office' ? fd.get('c') : '';
+        const co = Store.plan.companies.find(c => c.id === cid), typed = String(fd.get('t') || '').trim();
+        if (!typed && !co) { toast('Choose a company or type the task.'); return; }
+        const kind = !co ? 'office' : co.group === 'outstation' ? 'outstation' : co.id === 'ppv-works' ? 'office' : 'site';
+        const title = typed ? (co && !typed.toLowerCase().includes(co.name.toLowerCase()) ? `${co.name}: ${typed}` : typed) : (kind === 'office' ? co.name : `Site measurement: ${co.name}`);
+        const wm = co && kind !== 'office' ? Engine.windowProblem(Store.plan, co.id, date) : null; if (wm) toast(wm);
         const a = w === 'day' ? slots[0][0] : slots[+w][0], b = w === 'day' ? slots[slots.length - 1][1] : slots[+w][1];
-        const x = { id: 'e' + Date.now().toString(36), title, date, start: T.s(a), end: T.s(b), type: 'office', people: [pid], companies: [], details: 'Added on the daily timetable.', importance: fd.get('hp') ? 'high' : '' };
+        const x = { id: 'e' + Date.now().toString(36), title, date, start: T.s(a), end: T.s(b), type: kind, people: [pid], companies: co ? [co.id] : [], details: 'Added on the daily timetable.', importance: fd.get('hp') ? 'high' : '' };
         App.commit(`Added "${title}" for ${App.pname(pid)}. Other work that day moved around it.`, pl => pl.extra.push(x));
       });
       const rec = () => { const r = Store.plan.reviews; r.days = r.days || {}; const d = (r.days[date] = r.days[date] && r.days[date].emp ? r.days[date] : Object.assign(r.days[date] || {}, { emp: {} })); return d; };
@@ -170,12 +175,17 @@
       ${body}
       ${fine ? `<div class="fines">${fine}</div>` : ''}
       ${suff}
-      ${canAdd ? `<form class="addtask noprint" data-addtask="${esc(pid)}"><input name="t" placeholder="New task for ${esc(x.name)}" aria-label="New task" required>
+      ${canAdd ? `<form class="addtask noprint" data-addtask="${esc(pid)}"><select name="c" class="at-co" aria-label="Company">${companyOptions()}</select><input name="t" placeholder="New task for ${esc(x.name)}" aria-label="New task">
         <select name="w" aria-label="When">${slots.map((s, i) => `<option value="${i}">Slot ${i + 1}</option>`).join('')}<option value="day">Whole day</option></select>
         <label class="tchip sm hp-pick"><input type="checkbox" name="hp"><span>★ High</span></label><button class="btn ghost sm" type="submit">${icon('plus')}Add</button></form>` : ''}
     </article>`;
   }
 
+  /* All companies, by group, for the new-task menu */
+  function companyOptions() {
+    const plan = Store.plan;
+    return `<option value="">Company (optional)…</option><option value="-office">Office work, no company</option>` + Object.keys(App.GROUPS).map(gk => `<optgroup label="${App.GROUPS[gk]}">${plan.companies.filter(c => c.group === gk).map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</optgroup>`).join('');
+  }
   /* 6 pm follow-up: company engineers, discussion, action points for the next day */
   const engHtml = c => (c.engineers || []).filter(e => e.name).map(e => `<span class="eng">${esc(e.name)}${e.phone ? ` <a href="tel:${esc(e.phone.replace(/\s/g, ''))}">${esc(e.phone)}</a>` : ''}</span>`).join('') || '<span class="muted small">No engineer names yet (Settings → Company engineers)</span>';
   function followCard(date, past) {
@@ -380,11 +390,13 @@
           return `<article class="card comp comp-${gk}"><h3><a href="#/company?id=${encodeURIComponent(c.id)}">${esc(c.name)}</a></h3><p class="muted small">${ow.length ? ow.filter(x => !App.isB(x.id)).map(x => esc(x.name)).join(' and ') : 'Nobody assigned'}</p>
             ${(c.engineers || []).some(e => e.name) ? `<p class="small">Engineers: ${engHtml(c)}</p>` : ''}
             <div class="chips">${vs.map(v => `<span class="dchip ${App.isPast(v.date) ? 'past' : ''}" style="--pc:${App.pcolor(v.person)}">${App.avatar(v.person, 'xs')}${D.nice(v.date, { short: true })}</span>`).join('') || '<span class="muted small">No site day in this timetable</span>'}</div>
+            ${App.runsOfCompany(c.id).filter(rk => App.runDates(rk).dates.some(d => !App.isPast(d))).map(rk => { const R = App.runDates(rk); return `<button type="button" class="btn ghost sm run-btn noprint" data-run="${esc(rk)}" title="Add or take out a day for this month only">${icon('calendar')}${esc(D.MONTHS[+rk.split('@')[1].slice(5) - 1].slice(0, 3))}: ${esc(listDates(R.dates))}</button>`; }).join('')}
             <div class="cfiles">${FILES.map(([k, l]) => fileRow(c, k, l)).join('')}</div>
             ${any ? `<input class="bl-q noprint" data-blq="${esc(c.id)}" placeholder="Search: work or file name" aria-label="Search the lists of ${esc(c.name)}"><div class="bl-res" data-blr="${esc(c.id)}"></div>` : ''}</article>`;
         }).join('')}</div>`; }).join('')}</section>`;
     },
     mount(root) {
+      $$('[data-run]', root).forEach(b => b.onclick = () => App.openRun(b.dataset.run));
       $$('[data-cfile]', root).forEach(f => f.onchange = async () => {
         const file = f.files[0]; if (!file) return; const [cid, k] = f.dataset.cfile.split('|'), lab = FILES.find(x => x[0] === k)[1];
         try {

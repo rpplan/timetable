@@ -1,4 +1,4 @@
-# Works timetable (version 11)
+# Works timetable (version 12)
 
 The office timetable from **B_planning_of_works.xlsx**: who measures which company, outstation trips, billing and advance days, meetings, targets and points.
 A plain static website (no build step) for GitHub Pages. **Only B can open it**: nothing is shown until B logs in.
@@ -29,13 +29,13 @@ Only the light/dark choice is kept unencrypted. Backups (Settings → Excel & ba
 
 | Page | What it does |
 | --- | --- |
-| **Today** | The daily timetable: one line at the top for the day's joint meeting (click it to open the meeting); each employee's work with priority, clearance form, notes, status and remark, an **On leave** tick and **Works completed today: Sufficient / Not sufficient**, and a space to add a task. Holidays and Sundays show a dark-grey card with a **Works today** tick. Below: yesterday's action points, billing ticks and the 6 pm follow-up (company engineers and action points for the next day). |
+| **Today** | The daily timetable: one line at the top for the day's joint meeting (click it to open the meeting); each employee's work with priority, clearance form, notes, status and remark, an **On leave** tick and **Works completed today: Sufficient / Not sufficient**, and a space to add a task with a menu of all companies. Holidays and Sundays show a dark-grey card with a **Works today** tick. Below: yesterday's action points, billing ticks and the 6 pm follow-up (company engineers and action points for the next day). |
 | **Month** | Every day of the month for everyone, in light colours per kind of work. Mark cells for target completion (positive = green and points, negative = orange). Commitments (◷) and action points (↳) in fine text. **+ Meeting** under a date adds a meeting that day. The **Week** tab shows one week in exactly the same layout. |
 | Employees | All employees side by side: points for target completion, companies, outstation days, and every day with notes, commitments and action points. |
-| **Companies** | Each company has its own **Billing list**, **Rate list 2025-26** and **Rate list 2026-27** upload buttons and a search box that shows whether a work is already billed and where it is in the rate lists. Click a company for its monthly schedule, where the 6 pm follow-up points are written point by point. |
+| **Companies** | Each company has its own **Billing list**, **Rate list 2025-26** and **Rate list 2026-27** upload buttons and a search box that shows whether a work is already billed and where it is in the rate lists. Under the site days, a button for each run of the month (e.g. "Nov: 20, 21, 22, 23 Nov") adds a day before or after, any other day, or takes a day out, for that month only; for outstation trips it also sets which company is visited on which day. Click a company for its monthly schedule, where the 6 pm follow-up points are written point by point. |
 | **Meetings** | A list of every meeting by date. Click one to open it: name, day, **Meeting cancelled**, agenda (move items up or down; the times follow), **Commitments** (for each employee, only the work given to him; 0 days = same day) and the open **6 pm follow-up points**. The time slot of every meeting stays the same. |
 | **Billing days** | Time, company and pointwise tasks with their own ticks on every row; add or remove rows; delete a whole day (asks to confirm). |
-| **Link chart** | The team in the middle, companies around it in coloured islands, one line colour per employee. Click a line to make it **high priority (gold)**, move, copy, hand over or remove it; drag ⊕ onto a company to give work. |
+| **Link chart** | The team in the middle, companies around it in coloured islands, one line colour per employee. Click a line to make it **high priority (gold)**, move, copy, hand over or remove it; pull a line onto another company to move that work there; drag ⊕ onto a company to give work. |
 | **B admin** | Opened with B's pattern: day schedule (weekday / weekend sections, Monday banking, officers meeting and goodwill visits, Tuesday site visit with agenda and hourly plan), one section over the next 10 days, work lists, **PPV Works** and **Architectural Works** monthly schedules. Its details are loaded once from `setup/update-nov-2026.json`. |
 | Settings (button at the top) | Repeating work, who measures which company, company engineers, employees, hours, holidays and site windows, points and records, Excel, backup and update file, login. |
 

@@ -65,7 +65,7 @@
     clone
   };
 
-  const STORES = ['overrides', 'visitOverrides', 'status', 'reviews', 'away', 'remarks', 'importance', 'clear', 'leave', 'targets', 'followups', 'admin', 'workOn', 'actions', 'badmin'];
+  const STORES = ['overrides', 'visitOverrides', 'runDays', 'status', 'reviews', 'away', 'remarks', 'importance', 'clear', 'leave', 'targets', 'followups', 'admin', 'workOn', 'actions', 'badmin'];
   function migrate(p) {
     const d = g.DEFAULT_PLAN;
     p = p || {};

@@ -15,7 +15,7 @@
       adminHours: [{ dow: 6, start: '09:00', end: '19:00' }, { dow: 0, start: '09:00', end: '19:00' }, { dow: 1, start: '08:00', end: '12:00' }]
     },
     holidays: [], people: [], companies: [], responsibilities: {}, tasks: [], notes: [],
-    away: {}, overrides: {}, visitOverrides: {}, status: {}, reviews: {}, remarks: {}, extra: [],
+    away: {}, overrides: {}, visitOverrides: {}, runDays: {}, status: {}, reviews: {}, remarks: {}, extra: [],
     importance: {}, clear: {}, leave: {}, targets: {}, followups: {}, admin: {}, chart: { pos: {} }, paySheets: {}, meetDays: {}, files: {}
   };
 })(window);

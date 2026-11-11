@@ -127,17 +127,26 @@
     // Pass 1: monthly runs.
     //  "shift" work (meetings, billing, advances) moves when the date is a holiday or a day off for anyone in it.
     //  "skip" work (site runs, office streaks) is skipped on holidays; people on their weekly day off are left out.
-    const pending = [];
+    const pending = [], usedKeys = new Set();
     plan.tasks.filter(t => (t.mode || 'monthly') === 'monthly').forEach(t => {
       const ppl = normPeople(plan, t.people);
       months.forEach(([y, m, mk]) => {
         const ml = D.monthLen(y, m);
-        const days = (t.days || []).filter(d => d >= 1 && d <= ml).sort((a, b) => a - b);
-        if (!days.length) return;
         const runKey = `${t.id}@${mk}`;
-        const streak = days.length > 1;
-        days.map(d => `${mk}-${String(d).padStart(2, '0')}`).forEach(p => {
+        // Days changed by hand for this month only: { add: [dates], remove: [dates] }
+        const adj = (plan.runDays || {})[runKey] || {}, rem = new Set(adj.remove || []), add = new Set((adj.add || []).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)));
+        const base = (t.days || []).filter(d => d >= 1 && d <= ml).map(d => `${mk}-${String(d).padStart(2, '0')}`);
+        const dates = [...new Set(base.concat([...add]))].filter(p => !rem.has(p)).sort();
+        if (!dates.length) return;
+        const streak = dates.length > 1;
+        dates.forEach(p => {
           const key = `${t.id}@${p}`;
+          if (usedKeys.has(key)) return; usedKeys.add(key);
+          if (add.has(p)) {      // added by hand: held that day even on a Sunday or holiday
+            const here = ppl.filter(pid => !pOff(pid, p) || workOn[pid + '|' + p] || D.dow(p) === 0 || hol[p]);
+            occs.push(makeOcc(t, key, p, p, { runKey, people: here.length ? here : ppl, addedDay: true }));
+            return;
+          }
           if ((t.holiday || 'shift') === 'shift') {
             if (!offFor(p, ppl, streak)) occs.push(makeOcc(t, key, p, p, { runKey }));
             else pending.push({ t, key, planned: p, runKey, streak, reason: why(p, ppl) });
@@ -193,6 +202,10 @@
     // Office work for someone who is outstation that day moves to another day (meetings are just skipped by them)
     const outPD = {};
     live.forEach(o => { if (o.type !== 'outstation') return; const ch = (plan.away || {})[o.runKey] || {}; o.people.forEach(pid => { if (ch[pid] !== false) outPD[pid + '|' + o.date] = true; }); });
+    // Someone who is outstation that day (for example on a day added to the trip) is left out of the town site runs
+    live = live.filter(o => { if (!o.siteGroup || o.type === 'outstation' || (plan.overrides[o.key] && plan.overrides[o.key].people)) return true;
+      const gone = o.people.filter(pid => outPD[pid + '|' + o.date]); if (!gone.length) return true;
+      o.people = o.people.filter(pid => !gone.includes(pid)); o.inOutstation = gone; return o.people.length > 0; });
     live = live.filter(o => {
       const t = taskById[o.taskId];
       if (!t || o.type === 'outstation' || o.type === 'meeting' || o.type === 'review' || o.overridden || (t.holiday || 'shift') !== 'shift') return true;
@@ -285,7 +298,7 @@
     const office = {};
     live.forEach(o => { if (o.noSite) o.people.forEach(pid => { const k = pid + '|' + o.date; if (!office[k]) office[k] = o.title; }); });
     live.forEach(o => {
-      if (o.type !== 'site' && o.type !== 'outstation') return;
+      if ((o.type !== 'site' && o.type !== 'outstation') || o.extra) return;   // work added by hand stays where it was put
       if (plan.overrides[o.key] && plan.overrides[o.key].people) return;
       const gone = o.people.filter(pid => office[pid + '|' + o.date]);
       if (gone.length) { o.inOffice = gone.map(pid => ({ pid, why: office[pid + '|' + o.date] })); o.people = o.people.filter(pid => !gone.includes(pid)); }
@@ -334,7 +347,8 @@
         }
         taken[pid] && taken[pid].add(d); (usedBy[cid] = usedBy[cid] || new Set()).add(d);
         const start = (pDates[pid] && pDates[pid][0]) || list[0].date;
-        visits.push({ key: vk, runKey: rk, taskId: t.id, company: cid, person: (vo && vo.person) || pid, date: d, together: !!together,
+        if (vo && vo.skip) return;
+        visits.push({ key: vk, runKey: rk, taskId: t.id, company: (vo && vo.company) || cid, person: (vo && vo.person) || pid, date: d, together: !!together,
           start, due: D.add(start, tDays - 1),
           cycle: t.cycle || (t.siteGroup === 'outstation' ? 'Outstation' : ''), moved: !!vo, siteGroup: t.siteGroup, repeat: !!repeat });
       };
@@ -387,6 +401,11 @@
         });
       });
     });
+
+    // Visits added by hand in the Link chart (a line pulled onto another company on a sheets day)
+    Object.keys(plan.visitOverrides || {}).forEach(vk => { const vo = plan.visitOverrides[vk]; if (!vo || !vo.add) return;
+      const [rk, cid, pid] = vk.split('#')[0].split('|'); const o = live.find(x => x.runKey === rk && x.date === vo.date && x.people.includes(pid)); if (!o) return;
+      visits.push({ key: vk, runKey: rk, taskId: o.taskId, company: cid, person: pid, date: vo.date, together: false, start: vo.date, due: vo.date, cycle: o.cycle || (o.siteGroup === 'outstation' ? 'Outstation' : ''), moved: true, siteGroup: o.siteGroup, repeat: false, added: true }); });
 
     live = live.filter(o => inWin(o.date)).sort((a, b) => a.date === b.date ? T.m(a.start) - T.m(b.start) : (a.date < b.date ? -1 : 1));
 

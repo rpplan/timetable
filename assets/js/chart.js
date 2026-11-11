@@ -6,7 +6,7 @@
 (function () {
   'use strict';
   const { D, T } = Engine;
-  const { esc, $, $$, icon, toast, modal, closeModal } = UI;
+  const { esc, $, $$, icon, toast, modal, closeModal, confirmBox } = UI;
   const V = App.views;
   /* Two layouts. Wide (laptop): the team in the middle, companies spread around it in four coloured islands
      (main contractors on top, outstation on the right, other contractors below, office & meetings on the left).
@@ -240,6 +240,39 @@
       p.overrides[it.o.key] = ppl.length ? Object.assign({}, p.overrides[it.o.key] || {}, { people: ppl }) : { deleted: true };
     });
   }
+  /* A line pulled onto another company: the same work goes to that company on the same days and times */
+  function relink(l, target) {
+    const plan = Store.plan, from = l.node, toCo = plan.companies.find(c => c.id === target), toName = toCo ? toCo.name : 'Office work';
+    if (target === from) return;
+    if (target === 'meeting') { toast('Work cannot be moved into a meeting.'); return; }
+    const items = l.items.filter(it => !App.isPast(it.date)), bad = [];
+    if (!items.length) { toast('These days are over and cannot be changed.'); return; }
+    const fromName = App.cname(from);
+    const run = () => App.commit(`${App.pname(l.pid)}: ${from === 'office' ? 'office work' : fromName} → ${toName} (${App.listDates([...new Set(items.map(it => it.date))])})`, p => {
+      p.visitOverrides = p.visitOverrides || {}; p.paySheets = p.paySheets || {};
+      items.forEach(it => {
+        const o = it.o;
+        if (o.type === 'meeting') { bad.push(it); return; }
+        if (o.carried) { bad.push(it); return; }
+        if (o.siteGroup) {
+          const v = App.visitsFor(o, it.pid).find(x => x.company === from);
+          if (v) { const vo = Object.assign({}, p.visitOverrides[v.key]); if (target === 'office') p.visitOverrides[v.key] = v.added ? undefined : { skip: true }; else p.visitOverrides[v.key] = Object.assign(vo, { date: v.date, company: target, skip: undefined }); if (p.visitOverrides[v.key] === undefined) delete p.visitOverrides[v.key]; return; }
+          if (from === 'office' && toCo) { p.visitOverrides[`${o.runKey}|${target}|${it.pid}#${it.date}`] = { add: true, date: it.date }; return; }
+          bad.push(it); return;
+        }
+        if (o.type === 'billing' || o.type === 'advance') {
+          p.paySheets[o.key] = App.payRows(o).map(r => ({ start: r.start, end: r.end, steps: r.steps, tasks: r.tasks || [], company: r.company === (from === 'office' ? 'general' : from) ? (toCo ? target : 'general') : r.company })); return;
+        }
+        const swap = list => { const out = (list || []).filter(c => c !== from); if (toCo && !out.includes(target)) out.push(target); return out; };
+        const rename = t => from !== 'office' && toCo ? t.split(fromName).join(toCo.name) : t;
+        if (o.extra) { const x = p.extra.find(y => 'x:' + y.id === o.key); if (x) { x.companies = swap(x.companies); x.title = rename(x.title); } return; }
+        p.overrides[o.key] = Object.assign({}, p.overrides[o.key] || {}, { companies: swap(o.companies) });
+      });
+    });
+    const n = new Set(items.map(it => it.date)).size;
+    if (n > 1) confirmBox(`Move to ${toName}?`, `${App.pname(l.pid)}'s work at ${from === 'office' ? 'office work' : fromName} on ${n} days (${App.listDates([...new Set(items.map(it => it.date))])}) goes to ${toName}. You can undo this.`, 'Move', () => { run(); if (bad.length) toast(`${bad.length} could not be moved (meetings or work carried over from leave).`); });
+    else { run(); if (bad.length) toast('This one cannot be moved (meeting, leave carry-over, or no company).'); }
+  }
   function handDialog(it) {
     modal({ title: 'Hand over', body: `<p class="muted">${esc(it.label)}, ${esc(D.nice(it.date, { long: true }))}. Who does it instead of ${esc(App.pname(it.pid))}?</p>${App.peoplePicker('to', [])}`,
       foot: '<span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="button" class="btn primary" id="hd-ok">Hand over</button>',
@@ -323,10 +356,11 @@
   function svgPt(svg, e) { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
   function bindSvg(root, ns, byId, step) {
     const svg = $('#lc-svg', root);
-    $$('[data-link]', svg).forEach(p => p.addEventListener('click', e => { e.stopPropagation(); state.sel = state.sel === p.dataset.link ? null : p.dataset.link; stop(root); draw(root); }));
-    svg.onclick = e => { if (!e.target.closest('[data-link]') && !e.target.closest('[data-node]') && state.sel) { state.sel = null; draw(root); } };
+    const selectLink = key => { state.sel = state.sel === key ? null : key; stop(root); draw(root); };
+    svg.onclick = e => { if (state.noClick) { state.noClick = false; return; } if (!e.target.closest('[data-link]') && !e.target.closest('[data-node]') && state.sel) { state.sel = null; draw(root); } };
     svg.onpointerdown = e => {
-      const port = e.target.closest('[data-port]'), g = e.target.closest('[data-node]');
+      const port = e.target.closest('[data-port]'), g = e.target.closest('[data-node]'), lk = !port && !g && e.target.closest('[data-link]');
+      if (lk) { e.preventDefault(); state.drag = { kind: 'relink', key: lk.dataset.link, x0: e.clientX, y0: e.clientY, moved: false, id: e.pointerId }; return; }
       if (!port && !g) return;
       e.preventDefault(); svg.setPointerCapture(e.pointerId);
       const p0 = svgPt(svg, e);
@@ -335,6 +369,15 @@
     };
     svg.onpointermove = e => {
       const d = state.drag; if (!d) return; const p = svgPt(svg, e);
+      if (d.kind === 'relink') {
+        if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 6) return;
+        if (!d.moved) { d.moved = true; try { svg.setPointerCapture(d.id); } catch (x) { /* ignore */ } stop(root); $$('[data-link]', svg).forEach(g2 => g2.style.opacity = g2.dataset.link === d.key ? '1' : '.15'); }
+        const l = d.key.split('>'), a = byId['p:' + l[0]];
+        $('#lc-rubber', svg).setAttribute('d', `M${a.x},${a.y} L${p.x},${p.y}`); $('#lc-rubber', svg).classList.add('relink');
+        $$('.nd.co', svg).forEach(x => x.classList.remove('hover'));
+        const over = document.elementFromPoint(e.clientX, e.clientY); const g = over && over.closest('.nd.co'); if (g) g.classList.add('hover');
+        return;
+      }
       if (d.kind === 'move') {
         d.n.x = clampX(d.n, p.x - d.dx); d.n.y = clampY(d.n, p.y - d.dy); d.moved = true;
         d.g.setAttribute('transform', `translate(${d.n.x},${d.n.y})`);
@@ -347,6 +390,15 @@
     };
     svg.onpointerup = e => {
       const d = state.drag; state.drag = null; if (!d) return;
+      if (d.kind === 'relink') {
+        if (!d.moved) { selectLink(d.key); return; }
+        state.noClick = true; setTimeout(() => { state.noClick = false; }, 300);
+        $('#lc-rubber', svg).setAttribute('d', ''); $('#lc-rubber', svg).classList.remove('relink');
+        const over = document.elementFromPoint(e.clientX, e.clientY); const g = over && over.closest('[data-node]');
+        const l = linksAt(step).find(x => x.key === d.key);
+        if (!g || g.dataset.node.startsWith('p:') || !l) { draw(root); return; }
+        relink(l, g.dataset.node.slice(2)); draw(root); return;
+      }
       if (d.kind === 'move') { if (d.moved) { const k = posKey(); Store.plan.chart = Store.plan.chart || {}; Store.plan.chart[k] = Store.plan.chart[k] || {}; Store.plan.chart[k][d.n.id] = [Math.round(d.n.x), Math.round(d.n.y)]; Store.save(true); } draw(root); return; }
       $('#lc-rubber', svg).setAttribute('d', '');
       const over = document.elementFromPoint(e.clientX, e.clientY); const g = over && over.closest('[data-node]');
@@ -374,7 +426,7 @@
       const tip = (n, b, t) => `<li><span class="n">${n}</span><span><b>${b}</b> ${t}</span></li>`;
       return `<section class="lc"><h1 class="print-only">Link chart</h1>
         <div class="lc-how noprint"><b>How to use</b><ol>
-          ${tip(1, 'Pick a time', 'or Play')}${tip(2, 'Colour', '= employee, <span class="gold-t">gold</span> = high priority')}${tip(3, 'Click a line:', 'priority, move, copy, hand over')}${tip(4, 'Drag ⊕', 'onto a company: new work; drag boxes to arrange')}</ol></div>
+          ${tip(1, 'Pick a time', 'or Play')}${tip(2, 'Colour', '= employee, <span class="gold-t">gold</span> = high priority')}${tip(3, 'Click a line:', 'priority, move, copy, hand over; pull a line onto another company to move the work there')}${tip(4, 'Drag ⊕', 'onto a company: new work; drag boxes to arrange')}</ol></div>
         <div class="lc-bar noprint">
           <div class="seg" role="group" aria-label="Time scale">${[['half', 'Half hour'], ['day', 'Day'], ['month', 'Month']].map(([k, l]) => `<button type="button" data-scale="${k}" class="${state.scale === k ? 'on' : ''}">${l}</button>`).join('')}</div>
           <button type="button" class="round" id="lc-prev" aria-label="Back">${icon('left')}</button>

@@ -260,6 +260,7 @@
           <p class="muted small">Changing the times here fixes them for this day; the rest of each person's day is fitted around them.</p>
           ${times ? `<h3>Time for each person</h3><ul class="list">${times}</ul>` : ''}
           ${site ? `<h3>Site days</h3><ul class="list">${site}</ul>` : ''}
+          ${o.siteGroup && o.runKey ? `<p><button type="button" class="btn ghost sm" id="occ-run">${icon('calendar')}Days of this run (${esc(D.MONTHS[+o.runKey.split('@')[1].slice(5) - 1])}): add or take out a day${o.type === 'outstation' ? ', companies per day' : ''}</button></p>` : ''}
           ${o.details ? `<p class="muted small">${esc(o.details)}</p>` : ''}`,
         foot: `<button type="button" class="btn ghost danger" id="occ-del">${isExtra ? 'Delete' : 'Cancel this day'}</button>
           ${!isExtra && plan.overrides[key] ? '<button type="button" class="btn ghost" id="occ-reset">Undo my changes to this day</button>' : ''}
@@ -288,6 +289,7 @@
               if (fd.get('done')) p.status[key] = 'done'; else delete p.status[key];
             });
           };
+          const rb = $('#occ-run', m); if (rb) rb.onclick = () => { closeModal(); setTimeout(() => App.openRun(o.runKey), 60); };
           const r = $('#occ-reset', m); if (r) r.onclick = () => { closeModal(); App.commit(`${o.title} is back to plan`, p => { delete p.overrides[key]; }); };
           $('#occ-del', m).onclick = () => { closeModal(); App.commit(`${isExtra ? 'Deleted' : 'Cancelled'} ${o.title}, ${D.nice(o.date)}`, p => { if (isExtra) p.extra = p.extra.filter(x => 'x:' + x.id !== key); else p.overrides[key] = { deleted: true }; }); };
         }
@@ -381,6 +383,63 @@
             closeModal(); App.commit(`Saved ${t.title}`, p => { const i = p.tasks.findIndex(x => x.id === t.id); if (i >= 0) p.tasks[i] = t; else p.tasks.push(t); });
           };
           const d = $('#t-del', m); if (d) d.onclick = () => { closeModal(); App.commit(`Deleted ${t.title}`, p => { p.tasks = p.tasks.filter(x => x.id !== t.id); }); };
+        }
+      });
+    },
+
+    /* The days of one site or outstation run, for this month only: add a day before or after (or any day), take a day out,
+       and for outstation trips choose which company is visited on which day */
+    runDates(runKey) {
+      const plan = Store.plan, [tid, mk] = runKey.split('@'), t = this.task(tid); if (!t) return { base: [], dates: [], adj: {} };
+      const [y, m] = mk.split('-').map(Number), ml = D.monthLen(y, m), adj = (plan.runDays || {})[runKey] || {};
+      const base = (t.days || []).filter(d => d >= 1 && d <= ml).map(d => `${mk}-${String(d).padStart(2, '0')}`);
+      const rem = new Set(adj.remove || []), add = adj.add || [];
+      const dates = [...new Set(base.concat(add))].filter(d => !rem.has(d)).sort();
+      return { t, base, dates, adj, add: new Set(add), rem };
+    },
+    runsOfCompany(cid) {
+      const c = Store.plan.companies.find(x => x.id === cid); if (!c) return [];
+      const keys = [...new Set(this.data.gen.visits.filter(v => v.company === cid).map(v => v.runKey))];
+      Store.plan.tasks.filter(t => t.siteGroup === c.group && (t.mode || 'monthly') === 'monthly').forEach(t => [...new Set(this.data.gen.dates.map(D.month))].forEach(mk => { const k = `${t.id}@${mk}`; if (!keys.includes(k) && this.runDates(k).dates.some(d => d >= Store.plan.settings.start && d <= Store.plan.settings.end)) keys.push(k); }));
+      return keys.sort((a, b) => this.runDates(a).dates[0] < this.runDates(b).dates[0] ? -1 : 1);
+    },
+    openRun(runKey) {
+      const plan = Store.plan, st = plan.settings, R = this.runDates(runKey), t = R.t; if (!t) return;
+      const mk = runKey.split('@')[1], hol = this.data.gen.hol;
+      const offWhy = d => hol[d] || (D.dow(d) === 0 ? 'Sunday' : '');
+      const held = new Set(this.data.gen.occs.filter(o => o.runKey === runKey).map(o => o.date));
+      const all = [...new Set(R.base.concat([...R.add]))].sort();
+      const first = R.dates[0], last = R.dates[R.dates.length - 1];
+      const before = first ? D.add(first, -1) : null, after = last ? D.add(last, 1) : null;
+      const chip = d => { const removed = R.rem.has(d), added = R.add.has(d), past = this.isPast(d), why = offWhy(d), on = !removed && (held.has(d) || added);
+        return `<li class="rd ${on ? 'on' : 'out'} ${added ? 'added' : ''}"><b>${D.DAYS[D.dow(d)].slice(0, 3)} ${D.day(d)} ${D.MONTHS[D.parse(d).getUTCMonth()].slice(0, 3)}</b>
+          <small>${removed ? 'taken out' : added ? 'added by hand' : on ? 'planned' : `not held (${esc(why || 'day off')})`}</small>
+          ${past ? '<small class="muted">over</small>' : removed ? `<button type="button" class="btn ghost sm" data-rput="${d}">Put back</button>` : on ? `<button type="button" class="btn ghost sm danger" data-rrem="${d}">Take out</button>` : `<button type="button" class="btn ghost sm" data-radd="${d}">Hold this day</button>`}</li>`; };
+      const ppl = Engine.normPeople(plan, t.people), each = !t.assign && t.siteGroup === 'outstation';
+      const vrows = each ? ppl.map(pid => (((plan.responsibilities[pid] || {}).outstation) || []).map(cid => {
+        const vk = `${runKey}|${cid}|${pid}`, v = this.data.gen.visits.find(x => x.key === vk), vo = (plan.visitOverrides || {})[vk] || {};
+        const cur = vo.skip ? 'skip' : v ? v.date : '';
+        return `<tr><td>${this.who(pid)}</td><td><b class="co">${esc(this.cname(cid))}</b></td><td><select data-rv="${esc(vk)}" aria-label="Day">${R.dates.map(d => `<option value="${d}" ${cur === d ? 'selected' : ''}>${D.nice(d)}</option>`).join('')}<option value="skip" ${cur === 'skip' ? 'selected' : ''}>Not on this trip</option>${!cur ? '<option value="" selected>No day</option>' : ''}</select></td></tr>`; }).join('')).join('') : '';
+      modal({
+        title: `${t.title}: ${D.MONTHS[+mk.slice(5) - 1]} ${mk.slice(0, 4)}`,
+        body: `<p class="muted">Days of this run in ${D.MONTHS[+mk.slice(5) - 1]} only. Other months stay as they are (the usual days of every month are set in Settings → Repeating work).</p>
+          <ul class="run-days">${all.map(chip).join('')}</ul>
+          <div class="row-btns">${before && !this.isPast(before) && before >= st.start ? `<button type="button" class="btn ghost sm" data-radd="${before}">${icon('plus')}Day before: ${D.nice(before)}</button>` : ''}${after && after <= st.end ? `<button type="button" class="btn ghost sm" data-radd="${after}">${icon('plus')}Day after: ${D.nice(after)}</button>` : ''}
+            <label class="inline-add">Another day <input type="date" id="r-any" min="${D.today() > st.start ? D.today() : st.start}" max="${st.end}"></label></div>
+          ${each ? `<h3>Which company on which day</h3><table class="tbl run-v"><tbody>${vrows}</tbody></table><p class="muted small">Two people may go to their companies on the same day.</p>` : ''}
+          ${R.adj.add && R.adj.add.length || R.adj.remove && R.adj.remove.length ? '<button type="button" class="btn ghost sm" id="r-reset">Back to the usual days</button>' : ''}`,
+        foot: '<span class="spacer"></span><button type="button" class="btn primary" data-close>Done</button>',
+        onOpen: m => {
+          const upd = (label, fn) => { App.commit(label, p => { p.runDays = p.runDays || {}; const a = p.runDays[runKey] = p.runDays[runKey] || { add: [], remove: [] }; a.add = a.add || []; a.remove = a.remove || []; fn(a);
+            if (!a.add.length && !a.remove.length) delete p.runDays[runKey]; }); closeModal(); setTimeout(() => App.openRun(runKey), 60); };
+          $$('[data-radd]', m).forEach(b => b.onclick = () => { const d = b.dataset.radd; upd(`${t.title}: ${D.nice(d)} added`, a => { a.remove = a.remove.filter(x => x !== d); if (!a.add.includes(d)) a.add.push(d); }); });
+          $$('[data-rrem]', m).forEach(b => b.onclick = () => { const d = b.dataset.rrem; upd(`${t.title}: ${D.nice(d)} taken out`, a => { if (a.add.includes(d)) a.add = a.add.filter(x => x !== d); if (R.base.includes(d) && !a.remove.includes(d)) a.remove.push(d); }); });
+          $$('[data-rput]', m).forEach(b => b.onclick = () => { const d = b.dataset.rput; upd(`${t.title}: ${D.nice(d)} put back`, a => { a.remove = a.remove.filter(x => x !== d); }); });
+          const any = $('#r-any', m); any.onchange = () => { const d = any.value; if (!d) return; upd(`${t.title}: ${D.nice(d)} added`, a => { a.remove = a.remove.filter(x => x !== d); if (!a.add.includes(d)) a.add.push(d); }); };
+          const rs = $('#r-reset', m); if (rs) rs.onclick = () => upd(`${t.title}: back to the usual days`, a => { a.add = []; a.remove = []; });
+          $$('[data-rv]', m).forEach(sel => sel.onchange = () => { const vk = sel.dataset.rv, v = sel.value; const [, cid, pid] = vk.split('|');
+            App.commit(v === 'skip' ? `${App.cname(cid)}: not on this trip` : `${App.pname(pid)} at ${App.cname(cid)} on ${D.nice(v)}`, p => { p.visitOverrides = p.visitOverrides || {}; if (v === 'skip') p.visitOverrides[vk] = { skip: true }; else if (v) p.visitOverrides[vk] = { date: v }; else delete p.visitOverrides[vk]; });
+            closeModal(); setTimeout(() => App.openRun(runKey), 60); });
         }
       });
     },
