@@ -168,9 +168,12 @@
     const done = [];
     if (u.engineers) { Object.keys(u.engineers).forEach(cid => { const c = p.companies.find(x => x.id === cid); if (c && !(c.engineers || []).length) { c.engineers = clone(u.engineers[cid]); done.push(c.name); } }); }
     if (u.badmin) {
-      const b = p.badmin = p.badmin || {}; const keep = { days: b.days || {}, ppv: (b.ppv || {}).days || {}, arch: (b.arch || {}).days || {}, listText: b.listText || {} };
-      Object.assign(b, clone(u.badmin));
-      b.days = keep.days; b.listText = keep.listText;
+      const b = p.badmin = p.badmin || {};
+      const keep = { days: b.days || {}, ppv: (b.ppv || {}).days || {}, arch: (b.arch || {}).days || {}, listText: b.listText || {}, listItems: b.listItems || {}, customLists: b.customLists || [] };
+      const nu = clone(u.badmin), extra = nu.extraLists || []; delete nu.extraLists;
+      Object.assign(b, nu);
+      b.days = keep.days; b.listText = keep.listText; b.listItems = keep.listItems; b.customLists = keep.customLists;
+      extra.forEach(l => { if (!b.customLists.some(x => x.id === l.id)) b.customLists.push(l); });
       if (b.ppv) b.ppv.days = keep.ppv; if (b.arch) b.arch.days = keep.arch;
       done.push('B admin');
     }

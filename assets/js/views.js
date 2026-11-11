@@ -253,7 +253,6 @@
           ${mk.mode ? `<span class="count">${mk.sel.size} selected</span><button type="button" class="btn primary sm" id="mk-go" ${mk.sel.size ? '' : 'disabled'}>Mark selected…</button><button type="button" class="btn ghost sm" id="mk-clear">Clear</button>` : ''}</div>
         <div class="scroll"><table class="week month ${mk.mode ? 'selecting' : ''}" id="mt"><thead><tr><th>Date</th>${staff.map(x => `<th>${App.who(x.id)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
         ${legend()}
-        ${marks.length ? `<article class="card"><h2>Marks ${week ? 'this week' : 'this month'}</h2><ul class="mk-list">${marks.map(mm => `<li class="${mm.tone === 'neg' ? 'neg' : 'pos'}"><span class="mk-tone">${mm.tone === 'neg' ? 'Negative' : 'Positive'}</span><span><b>${esc(mm.text)}</b><small>${esc(cellsText(mm.cells))}</small></span><button type="button" class="btn ghost sm" data-mkedit="${esc(mm.id)}">Edit</button></li>`).join('')}</ul></article>` : ''}
       </section>`;
     },
     mount(root, p) {

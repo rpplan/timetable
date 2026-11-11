@@ -1,4 +1,4 @@
-# Works timetable (version 12)
+# Works timetable (version 13)
 
 The office timetable from **B_planning_of_works.xlsx**: who measures which company, outstation trips, billing and advance days, meetings, targets and points.
 A plain static website (no build step) for GitHub Pages. **Only B can open it**: nothing is shown until B logs in.

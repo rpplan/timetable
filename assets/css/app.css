@@ -1194,3 +1194,52 @@ tr:hover .mt-add, .mt-add:focus-visible { opacity: 1; }
 .inline-add { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
 .inline-add input { border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; background: var(--card); color: var(--ink); }
 .run-v select { border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; background: var(--card); color: var(--ink); }
+
+/* ---------- version 13: B admin points, work lists, architectural days ---------- */
+.pts-ed { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; }
+.pts-ed li { display: flex; gap: 5px; align-items: center; }
+.pts-ed li.done .pt-t { text-decoration: line-through; color: var(--muted); }
+.pts-ed .pt-t { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 4px 7px; background: var(--card); color: var(--ink); font-size: 13px; }
+.pts-ed .pt-d { width: 140px; border: 1px solid var(--line); border-radius: 7px; padding: 3px 5px; background: var(--card); color: var(--ink); font-size: 12.5px; }
+.pts-ed .x { flex: none; }
+.pts-ed .print-only { display: none; }
+.g-prev { background: #fff4d0; border-radius: 8px; padding: 4px 8px; margin: 4px 0; font-size: 12px; color: #6b4a00; }
+.g-prev ul { margin: 2px 0 0; padding-left: 16px; }
+:root[data-theme="dark"] .g-prev { background: #352a12; color: #ffcf73; }
+.wl-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-items: start; }
+.wl-grid.inl { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.wl-card { padding: 12px; }
+.wl-h { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.wl-h h3 { margin: 0; font-size: 15px; flex: 1; }
+.wl-name { flex: 1; min-width: 0; font-weight: 800; font-size: 15px; border: 1px solid transparent; border-radius: 7px; padding: 3px 6px; background: none; color: var(--ink); }
+.wl-name:hover, .wl-name:focus { border-color: var(--line); background: var(--card); }
+.wl-acts { display: flex; gap: 4px; }
+.wl-acts .round .ico { width: 14px; height: 14px; }
+.wl-cols { display: flex; justify-content: space-between; padding: 0 40px 0 26px; }
+.wl-new { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+.wl-new input[name=n] { flex: 1 1 220px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--card); color: var(--ink); }
+.ar-list { display: grid; gap: 8px; }
+.ar-day { background: var(--card); border-radius: 12px; box-shadow: var(--shadow); border-left: 4px solid var(--line); }
+.ar-day.today { border-left-color: var(--accent); }
+.ar-day.past:not([open]) { opacity: .65; }
+.ar-day summary { cursor: pointer; padding: 10px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.ar-w { flex: 1; font-weight: 600; }
+.ar-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; padding: 0 14px 14px; }
+.ar-p { border-top: 3px solid var(--pc); background: var(--soft); border-radius: 10px; padding: 8px 10px; }
+.ar-ph { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+@media print {
+  .pts-ed input, .pts-ed .x, .add-small { display: none !important; }
+  .pts-ed .print-only { display: inline !important; }
+  .pts-ed li { display: list-item; list-style: none; }
+  body[data-print="lists"] .wl-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; font-size: 10px; }
+  body[data-print="lists"] .wl-card { padding: 6px; box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
+  body[data-print="lists"] .wl-h h3 { font-size: 11.5px; }
+  body[data-print="lists"] .wl-name, body[data-print="lists"] .wl-acts, body[data-print="lists"] .count, body[data-print="lists"] .wl-cols, body[data-print="lists"] .wl-new { display: none !important; }
+  body[data-print="lists"] .head .acts { display: none; }
+  body[data-print="lists"] .pts-ed { gap: 1px; }
+  .ar-day { break-inside: avoid; }
+  .ar-day:not([open]) { display: none; }
+}
+@media (max-width: 640px) { .pts-ed .pt-d { width: 118px; } .wl-grid { grid-template-columns: 1fr; } }
+.pts-ed .pt-d { flex: 0 0 128px; width: 128px; min-width: 0; }
+.wl-card { min-width: 0; overflow: hidden; }
